@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "winfsp_wrs",
+    "examples/*",
+]
+resolver = "2"

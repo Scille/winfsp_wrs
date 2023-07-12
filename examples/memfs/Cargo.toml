@@ -1,0 +1,7 @@
+[package]
+name = "memfs"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+winfsp_wrs = { path = "../../winfsp_wrs", features = [] }

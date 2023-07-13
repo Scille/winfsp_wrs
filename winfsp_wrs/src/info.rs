@@ -1,7 +1,7 @@
 use widestring::U16CStr;
 
 use crate::{
-    ext::{FSP_FSCTL_FILE_INFO, FSP_FSCTL_VOLUME_INFO},
+    ext::{FSP_FSCTL_DIR_INFO, FSP_FSCTL_FILE_INFO, FSP_FSCTL_VOLUME_INFO},
     CreateOptions, FileAccessRights, FileAttributes,
 };
 
@@ -163,4 +163,27 @@ pub struct CreateFileInfo {
     pub granted_access: FileAccessRights,
     pub file_attributes: FileAttributes,
     pub allocation_size: u64,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct DirInfo {
+    pub size: u16,
+    pub file_info: FileInfo,
+    _padding: [u8; 24],
+    pub file_name: [u16; 255],
+}
+
+impl DirInfo {
+    pub(crate) fn new(file_info: FileInfo, file_name: &U16CStr) -> Self {
+        let mut buf = [0; 255];
+        buf[..file_name.len()].copy_from_slice(file_name.as_slice());
+
+        Self {
+            size: (std::mem::size_of::<FSP_FSCTL_DIR_INFO>() + file_name.len() * 2) as u16,
+            file_info,
+            _padding: [0; 24],
+            file_name: buf,
+        }
+    }
 }

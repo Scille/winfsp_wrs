@@ -1,0 +1,46 @@
+name: Rust
+
+on:
+  push:
+  pull_request:
+
+env:
+  WINFSP_VERSION: "2.0.23075"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ci:
+    runs-on: windows-2022
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # pin v3.5.3
+
+    - name: Install winfsp
+      run: choco install winfsp -y --version=${{ env.WINFSP_VERSION }}
+
+    - name: Install winfsp-tests-x64
+      uses: engineerd/configurator@dc6b312d89ab097f73f3ebbf507a69dd7399c5d0 # pin v0.0.10
+      with:
+        name: winfsp-tests-x64.exe
+        url: https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-tests-${{ env.WINFSP_VERSION }}.zip
+        pathInArchive: winfsp-tests-x64.exe
+
+    - name: Move winfsp-tests-x64
+      run: mv 'C:\\Users\\runneradmin\\runneradmin\\configurator\\bin\\winfsp-tests-x64.exe' 'C:\\Program Files (x86)\\WinFsp\\bin\\'
+
+    - name: Install rust
+      uses: actions-rust-lang/setup-rust-toolchain@f3c84ee10bf5a86e7a5d607d487bf17d57670965 # pin v1.5.0
+
+    - name: Check rust code format
+      run: cargo fmt --check
+
+    - name: Clippy
+      run: cargo clippy
+
+    - name: Run tests
+      run: cargo test
+      timeout-minutes: 10
+      env:
+        WINFSP_TEST_EXE: "C:\\Program Files (x86)\\WinFsp\\bin\\winfsp-tests-x64.exe"
+

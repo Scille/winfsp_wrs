@@ -11,8 +11,8 @@ use crate::{
         PIO_STATUS_BLOCK, PSECURITY_DESCRIPTOR, PSIZE_T, PUINT32, PULONG, PVOID, PWSTR,
         SECURITY_INFORMATION, SIZE_T, UINT32, UINT64, ULONG,
     },
-    CleanupFlags, CreateFileInfo, CreateOptions, FileAccessRights, FileAttributes, FileInfo,
-    PSecurityDescriptor, SecurityDescriptor, VolumeInfo,
+    CleanupFlags, CreateFileInfo, CreateOptions, DirInfo, FileAccessRights, FileAttributes,
+    FileInfo, PSecurityDescriptor, SecurityDescriptor, VolumeInfo,
 };
 
 pub trait FileSystemContext {
@@ -830,18 +830,14 @@ impl Interface {
                 for (file_name, file_info) in entries_info {
                     // FSP_FSCTL_DIR_INFO base struct + WCHAR[] string
                     // Note: Windows does not use NULL-terminated string
-                    let mut dir_info: FSP_FSCTL_DIR_INFO = std::mem::zeroed();
-                    dir_info.Size =
-                        (std::mem::size_of::<FSP_FSCTL_DIR_INFO>() + file_name.len() * 2) as u16;
-                    dir_info.FileInfo = file_info.0;
-                    std::ptr::copy(
-                        file_name.as_ptr(),
-                        dir_info.FileNameBuf.as_mut_ptr(),
-                        file_name.len(),
-                    );
+                    let dir_info = &mut DirInfo::new(file_info, &file_name);
 
-                    if FspFileSystemAddDirInfo(&mut dir_info, buffer, length, p_bytes_transferred)
-                        == 0
+                    if FspFileSystemAddDirInfo(
+                        (dir_info as *mut DirInfo).cast(),
+                        buffer,
+                        length,
+                        p_bytes_transferred,
+                    ) == 0
                     {
                         return STATUS_SUCCESS;
                     }
@@ -1059,7 +1055,7 @@ impl Interface {
                 std::ptr::copy(
                     file_name.as_ptr(),
                     (*dir_info).FileNameBuf.as_mut_ptr(),
-                    file_name.len() + 1,
+                    file_name.len(),
                 );
                 STATUS_SUCCESS
             }

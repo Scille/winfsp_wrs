@@ -355,8 +355,6 @@ impl FileSystemContext for MemFs {
         }
     }
 
-    fn close(&self, _file_context: Self::FileContext) {}
-
     fn overwrite(
         &self,
         file_context: &Self::FileContext,

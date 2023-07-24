@@ -1,7 +1,15 @@
 use std::marker::PhantomData;
+#[cfg(feature = "icon")]
+use std::path::Path;
 
 use widestring::{u16cstr, U16CStr, U16CString};
 use windows_sys::Win32::Foundation::STATUS_SUCCESS;
+#[cfg(feature = "icon")]
+use windows_sys::Win32::{
+    Foundation::CloseHandle,
+    Storage::FileSystem::{CreateFileW, WriteFile},
+    UI::Shell::PathMakeSystemFolderW,
+};
 
 use crate::{
     ext::{
@@ -14,6 +22,8 @@ use crate::{
     },
     FileSystemContext, Interface,
 };
+#[cfg(feature = "icon")]
+use crate::{FileAccessRights, FileAttributes, FileCreationDisposition, FileShareMode};
 
 #[repr(i32)]
 #[derive(Debug, Default, Clone, Copy)]
@@ -362,6 +372,13 @@ impl<Ctx: FileSystemContext> FileSystem<Ctx> {
         }
     }
 
+    #[cfg(feature = "icon")]
+    /// Set an icon for the mountpoint folder
+    pub fn set_icon(&self, icon: &Path) {
+        let mountpoint = unsafe { U16CStr::from_ptr_str(self.inner.MountPoint) };
+        set_icon(mountpoint, icon);
+    }
+
     pub fn restart(mut self) -> Result<Self, NTSTATUS> {
         unsafe {
             // Need to allocate, because it will be freed
@@ -428,4 +445,48 @@ impl<Ctx: FileSystemContext> FileSystem<Ctx> {
             std::mem::drop(Box::from_raw(self.inner.Interface.cast_mut()));
         }
     }
+}
+
+#[cfg(feature = "icon")]
+fn set_icon(folder_path: &U16CStr, icon_path: &Path) {
+    unsafe {
+        let mut path = [
+            folder_path.as_slice(),
+            u16cstr!("\\desktop.ini").as_slice_with_nul(),
+        ]
+        .concat();
+
+        PathMakeSystemFolderW(folder_path.as_ptr());
+
+        let handle = CreateFileW(
+            path.as_mut_ptr(),
+            (FileAccessRights::file_generic_read() | FileAccessRights::file_generic_write()).0,
+            (FileShareMode::read() | FileShareMode::write()).0,
+            std::ptr::null(),
+            FileCreationDisposition::OpenAlways as _,
+            (FileAttributes::hidden() | FileAttributes::system()).0,
+            0,
+        );
+
+        let icon = icon_path.to_str().unwrap();
+
+        let content = format!("[.ShellClassInfo]\nIconResource={icon},0\n");
+
+        WriteFile(
+            handle,
+            content.as_ptr(),
+            content.len() as u32,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        );
+
+        CloseHandle(handle);
+    }
+}
+
+#[cfg(feature = "icon")]
+/// Set an icon for the folder
+pub fn set_folder_icon(folder_path: &Path, icon_path: &Path) {
+    let folder_path = U16CString::from_os_str(folder_path.as_os_str()).unwrap();
+    set_icon(&folder_path, icon_path);
 }

@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use widestring::{u16cstr, U16CStr};
+use widestring::{u16cstr, U16CStr, U16CString};
 use windows_sys::Win32::Foundation::STATUS_SUCCESS;
 
 use crate::{
@@ -364,6 +364,9 @@ impl<Ctx: FileSystemContext> FileSystem<Ctx> {
 
     pub fn restart(mut self) -> Result<Self, NTSTATUS> {
         unsafe {
+            // Need to allocate, because it will be freed
+            let mut mountpoint = U16CString::from_ptr_str(self.inner.MountPoint);
+
             FspFileSystemStopDispatcher(&mut self.inner);
             FspFileSystemRemoveMountPoint(&mut self.inner);
 
@@ -397,7 +400,7 @@ impl<Ctx: FileSystemContext> FileSystem<Ctx> {
                 self.params.guard_strategy as FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY,
             );
 
-            let res = FspFileSystemSetMountPoint(p_inner, self.inner.MountPoint);
+            let res = FspFileSystemSetMountPoint(p_inner, mountpoint.as_mut_ptr());
 
             if res != STATUS_SUCCESS {
                 return Err(res);

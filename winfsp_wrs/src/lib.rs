@@ -12,7 +12,9 @@ pub(crate) use callback::Interface;
 pub use callback::FileSystemContext;
 #[cfg(feature = "icon")]
 pub use file_system::set_folder_icon;
-pub use file_system::{FileContextMode, FileSystem, Params, VolumeParams};
+pub use file_system::{
+    pin_to_quick_access, unpin_to_quick_access, FileContextMode, FileSystem, Params, VolumeParams,
+};
 pub use filetime::{filetime_from_utc, filetime_now};
 pub use flags::{
     CleanupFlags, CreateOptions, FileAccessRights, FileAttributes, FileCreationDisposition,

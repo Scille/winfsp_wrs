@@ -1,6 +1,8 @@
-use std::marker::PhantomData;
-#[cfg(feature = "icon")]
-use std::path::Path;
+use std::{
+    marker::PhantomData,
+    path::Path,
+    process::{Command, ExitStatus},
+};
 
 use widestring::{u16cstr, U16CStr, U16CString};
 use windows_sys::Win32::Foundation::STATUS_SUCCESS;
@@ -489,4 +491,21 @@ fn set_icon(folder_path: &U16CStr, icon_path: &Path) {
 pub fn set_folder_icon(folder_path: &Path, icon_path: &Path) {
     let folder_path = U16CString::from_os_str(folder_path.as_os_str()).unwrap();
     set_icon(&folder_path, icon_path);
+}
+
+pub fn pin_to_quick_access(folder_path: &Path) -> std::io::Result<ExitStatus> {
+    let folder_path = folder_path.to_str().unwrap();
+    let cmd = format!("(new-object -com shell.application).Namespace('{folder_path}').Self.InvokeVerb('pintohome')");
+
+    Command::new("powershell").arg("-c").arg(cmd).status()
+}
+
+pub fn unpin_to_quick_access(folder_path: &Path) -> std::io::Result<ExitStatus> {
+    let folder_path = folder_path.to_str().unwrap();
+    let quick_access = "shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}";
+    let cmd = format!(
+        "((new-object -com shell.application).Namespace('{quick_access}').Items() | where {{$_.Path -eq '{folder_path}'}}).InvokeVerb('unpinfromhome')"
+    );
+
+    Command::new("powershell").arg("-c").arg(cmd).status()
 }

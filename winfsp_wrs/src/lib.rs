@@ -10,9 +10,14 @@ mod security;
 pub(crate) use callback::Interface;
 
 pub use callback::FileSystemContext;
+#[cfg(feature = "icon")]
+pub use file_system::set_folder_icon;
 pub use file_system::{FileContextMode, FileSystem, Params, VolumeParams};
 pub use filetime::{filetime_from_utc, filetime_now};
-pub use flags::{CleanupFlags, CreateOptions, FileAccessRights, FileAttributes};
+pub use flags::{
+    CleanupFlags, CreateOptions, FileAccessRights, FileAttributes, FileCreationDisposition,
+    FileShareMode,
+};
 pub use info::{CreateFileInfo, DirInfo, FileInfo, VolumeInfo};
 pub use init::init;
 pub use security::{PSecurityDescriptor, SecurityDescriptor};

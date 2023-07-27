@@ -376,9 +376,9 @@ impl<Ctx: FileSystemContext> FileSystem<Ctx> {
 
     #[cfg(feature = "icon")]
     /// Set an icon for the mountpoint folder
-    pub fn set_icon(&self, icon: &Path) {
+    pub fn set_icon(&self, icon: &Path, index: i32) {
         let mountpoint = unsafe { U16CStr::from_ptr_str(self.inner.MountPoint) };
-        set_icon(mountpoint, icon);
+        set_icon(mountpoint, icon, index);
     }
 
     pub fn restart(mut self) -> Result<Self, NTSTATUS> {
@@ -450,7 +450,7 @@ impl<Ctx: FileSystemContext> FileSystem<Ctx> {
 }
 
 #[cfg(feature = "icon")]
-fn set_icon(folder_path: &U16CStr, icon_path: &Path) {
+fn set_icon(folder_path: &U16CStr, icon_path: &Path, index: i32) {
     unsafe {
         let mut path = [
             folder_path.as_slice(),
@@ -472,7 +472,7 @@ fn set_icon(folder_path: &U16CStr, icon_path: &Path) {
 
         let icon = icon_path.to_str().unwrap();
 
-        let content = format!("[.ShellClassInfo]\nIconResource={icon},0\n");
+        let content = format!("[.ShellClassInfo]\nIconResource={icon},{index}\n");
 
         WriteFile(
             handle,
@@ -488,9 +488,9 @@ fn set_icon(folder_path: &U16CStr, icon_path: &Path) {
 
 #[cfg(feature = "icon")]
 /// Set an icon for the folder
-pub fn set_folder_icon(folder_path: &Path, icon_path: &Path) {
+pub fn set_folder_icon(folder_path: &Path, icon_path: &Path, index: i32) {
     let folder_path = U16CString::from_os_str(folder_path.as_os_str()).unwrap();
-    set_icon(&folder_path, icon_path);
+    set_icon(&folder_path, icon_path, index);
 }
 
 pub fn pin_to_quick_access(folder_path: &Path) -> std::io::Result<ExitStatus> {

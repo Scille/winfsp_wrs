@@ -1,0 +1,8 @@
+[package]
+name = "memfs_parsec"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+winfsp_wrs = { path = "../../winfsp_wrs", features = [] }
+serde_json = "1.0.104"

@@ -443,14 +443,17 @@ impl FileSystemContext for MemFs {
     fn read(
         &self,
         file_context: &Self::FileContext,
+        buffer: &mut [u8],
         offset: u64,
         length: u64,
-    ) -> Result<Vec<u8>, NTSTATUS> {
+    ) -> Result<usize, NTSTATUS> {
         if let Obj::File(file_obj) = file_context.lock().unwrap().deref() {
             if offset >= file_obj.info.file_size() {
                 return Err(STATUS_END_OF_FILE);
             }
-            Ok(file_obj.read(offset as usize, length as usize).into())
+            let data = file_obj.read(offset as usize, length as usize);
+            buffer[..data.len()].copy_from_slice(data);
+            Ok(data.len())
         } else {
             unreachable!()
         }

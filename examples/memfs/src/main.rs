@@ -1,5 +1,4 @@
 use std::{
-    cmp::Ordering,
     collections::HashMap,
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
@@ -107,16 +106,7 @@ impl FileObj {
     }
 
     fn set_allocation_size(&mut self, allocation_size: usize) {
-        match allocation_size.cmp(&self.allocation_size()) {
-            Ordering::Less => self.data.truncate(allocation_size),
-            Ordering::Greater => {
-                self.data
-                    .append(&mut vec![0; allocation_size - self.allocation_size()])
-            }
-            Ordering::Equal => (),
-        }
-
-        assert_eq!(self.allocation_size(), allocation_size);
+        self.data.resize(allocation_size, 0);
         self.info
             .set_file_size(std::cmp::min(self.info.file_size(), allocation_size as u64));
         self.info.set_allocation_size(allocation_size as u64);
@@ -594,6 +584,8 @@ impl FileSystemContext for MemFs {
 
         let file_name = PathBuf::from(file_name.to_os_string());
         let new_file_name = PathBuf::from(new_file_name.to_os_string());
+        let file_name_str = file_name.to_str().unwrap();
+        let new_file_name_str = new_file_name.to_str().unwrap();
 
         if entries.contains_key(&new_file_name) {
             if let Obj::Folder(_) = entries.get(&file_name).unwrap().lock().unwrap().deref() {
@@ -608,18 +600,15 @@ impl FileSystemContext for MemFs {
 
         let iter_entries = entries
             .keys()
-            .filter(|path| path.to_str().unwrap().contains(file_name.to_str().unwrap()))
-            .cloned()
-            .collect::<Vec<PathBuf>>();
+            .map(|path| path.to_str().unwrap().to_string())
+            .filter(|path| path.starts_with(file_name_str))
+            .collect::<Vec<String>>();
 
         for entry_path in iter_entries {
-            let new_entry_path = PathBuf::from(entry_path.to_str().unwrap().replacen(
-                file_name.to_str().unwrap(),
-                new_file_name.to_str().unwrap(),
-                1,
-            ));
+            let new_entry_path =
+                PathBuf::from(entry_path.replacen(file_name_str, new_file_name_str, 1));
 
-            let entry = entries.remove(&entry_path).unwrap();
+            let entry = entries.remove(Path::new(&entry_path)).unwrap();
             entry.lock().unwrap().set_path(new_entry_path.clone());
             entries.insert(new_entry_path, entry);
         }

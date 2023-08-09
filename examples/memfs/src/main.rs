@@ -445,13 +445,12 @@ impl FileSystemContext for MemFs {
         file_context: &Self::FileContext,
         buffer: &mut [u8],
         offset: u64,
-        length: u64,
     ) -> Result<usize, NTSTATUS> {
         if let Obj::File(file_obj) = file_context.lock().unwrap().deref() {
             if offset >= file_obj.info.file_size() {
                 return Err(STATUS_END_OF_FILE);
             }
-            let data = file_obj.read(offset as usize, length as usize);
+            let data = file_obj.read(offset as usize, buffer.len());
             buffer[..data.len()].copy_from_slice(data);
             Ok(data.len())
         } else {

@@ -94,7 +94,6 @@ pub trait FileSystemContext {
         _file_context: &Self::FileContext,
         _buffer: &mut [u8],
         _offset: u64,
-        _length: u64,
     ) -> Result<usize, NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
     }
@@ -509,7 +508,7 @@ impl Interface {
         let fctx = &*file_context.cast::<C::FileContext>();
         let buffer = std::slice::from_raw_parts_mut(buffer.cast(), length as usize);
 
-        match C::read(fs, fctx, buffer, offset, length as u64) {
+        match C::read(fs, fctx, buffer, offset) {
             Err(e) => e,
             Ok(bytes_transferred) => {
                 *p_bytes_transferred = bytes_transferred as ULONG;

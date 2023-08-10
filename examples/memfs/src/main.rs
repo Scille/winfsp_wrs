@@ -284,22 +284,13 @@ impl FileSystemContext for MemFs {
         _buffer: &[u8],
         _extra_buffer_is_reparse_point: bool,
     ) -> Result<Self::FileContext, NTSTATUS> {
-        let mut entries = self.entries.lock().unwrap();
-
         if self.read_only {
             return Err(STATUS_MEDIA_WRITE_PROTECTED);
         }
 
-        let file_name = PathBuf::from(file_name.to_os_string());
+        let mut entries = self.entries.lock().unwrap();
 
-        // Retrieve file
-        if let Some(parent_file_obj) = file_name.parent().and_then(|parent| entries.get(parent)) {
-            if let Obj::File { .. } = *parent_file_obj.lock().unwrap() {
-                return Err(STATUS_NOT_A_DIRECTORY);
-            }
-        } else {
-            return Err(STATUS_OBJECT_NAME_NOT_FOUND);
-        }
+        let file_name = PathBuf::from(file_name.to_os_string());
 
         // File/Folder already exists
         if entries.contains_key(&file_name) {

@@ -5,15 +5,15 @@ edition = "2021"
 repository = "https://github.com/Scille/winfsp_wrs"
 keywords = [
     "filesystem",
-    "fs",
     "fuse",
     "mountpoint",
     "windows",
     "winfsp",
 ]
 categories = [
-    "binding",
     "filesystem",
     "mountpoint",
     "os::windows-api"
 ]
+description = "Helper to allow delayload for WinFSP's dll"
+license = "MIT OR Apache-2.0"

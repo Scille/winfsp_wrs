@@ -1,0 +1,19 @@
+[package]
+name = "winfsp_build"
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/Scille/winfsp_wrs"
+keywords = [
+    "filesystem",
+    "fs",
+    "fuse",
+    "mountpoint",
+    "windows",
+    "winfsp",
+]
+categories = [
+    "binding",
+    "filesystem",
+    "mountpoint",
+    "os::windows-api"
+]

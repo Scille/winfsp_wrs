@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 winfsp_wrs = { path = "../../winfsp_wrs" }
 ctrlc = "3.4.0"
+
+[build-dependencies]
+winfsp_build = { path = "../../winfsp_build" }

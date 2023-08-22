@@ -7,24 +7,20 @@ const HEADER: &str = r#"
 "#;
 
 fn include() -> String {
-    #[cfg(not(feature = "vendored"))]
-    {
-        use registry::{Data, Hive, Security};
-        let winfsp_install = Hive::LocalMachine
-            .open("SOFTWARE\\WOW6432Node\\WinFsp", Security::Read)
-            .ok()
-            .and_then(|u| u.value("InstallDir").ok())
-            .expect("WinFsp installation directory not found.");
-        let directory = match winfsp_install {
-            Data::String(string) => string.to_string_lossy(),
-            _ => panic!("unexpected install directory"),
-        };
+    use registry::{Data, Hive, Security};
+    let winfsp_install = Hive::LocalMachine
+        .open("SOFTWARE\\WOW6432Node\\WinFsp", Security::Read)
+        .ok()
+        .and_then(|u| u.value("InstallDir").ok())
+        .expect("WinFsp installation directory not found.");
+    let directory = match winfsp_install {
+        Data::String(string) => string.to_string_lossy(),
+        _ => panic!("unexpected install directory"),
+    };
 
-        println!("cargo:rustc-link-search={}/lib", directory);
+    println!("cargo:rustc-link-search={}/lib", directory);
 
-        format!("--include-directory={}/inc", directory)
-    }
-    // TODO: Add vendored feature
+    format!("--include-directory={}/inc", directory)
 }
 
 fn main() {
@@ -56,19 +52,14 @@ fn main() {
             .clang_arg(link_include);
 
         let bindings = if cfg!(all(target_os = "windows", target_env = "msvc")) {
-            println!("cargo:rustc-link-lib=dylib=delayimp");
-
             if cfg!(target_arch = "x86_64") {
                 println!("cargo:rustc-link-lib=dylib=winfsp-x64");
-                println!("cargo:rustc-link-arg=/DELAYLOAD:winfsp-x64.dll");
                 bindings.clang_arg("--target=x86_64-pc-windows-msvc")
             } else if cfg!(target_arch = "i686") {
                 println!("cargo:rustc-link-lib=dylib=winfsp-x86");
-                println!("cargo:rustc-link-arg=/DELAYLOAD:winfsp-x86.dll");
                 bindings.clang_arg("--target=i686-pc-windows-msvc")
             } else if cfg!(target_arch = "aarch64") {
                 println!("cargo:rustc-link-lib=dylib=winfsp-a64");
-                println!("cargo:rustc-link-arg=/DELAYLOAD:winfsp-a64.dll");
                 bindings.clang_arg("--target=aarch64-pc-windows-msvc")
             } else {
                 panic!("unsupported architecture")

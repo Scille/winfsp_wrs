@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "winfsp_wrs",
     "examples/*",
+    "winfsp_build",
+    "winfsp_wrs",
 ]
 resolver = "2"

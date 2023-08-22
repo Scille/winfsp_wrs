@@ -12,7 +12,5 @@ pub fn build() {
         } else {
             panic!("unsupported architecture")
         }
-    } else {
-        panic!("unsupported triple")
     }
 }

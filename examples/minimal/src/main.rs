@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use winfsp_wrs::{
-    filetime_now, u16cstr, CreateOptions, FileAccessRights, FileAttributes, FileContextMode,
-    FileInfo, FileSystem, FileSystemContext, PSecurityDescriptor, Params, SecurityDescriptor,
-    U16CStr, U16CString, VolumeInfo, VolumeParams, NTSTATUS,
+    filetime_now, u16cstr, CreateOptions, FileAccessRights, FileAttributes, FileInfo, FileSystem,
+    FileSystemContext, PSecurityDescriptor, Params, SecurityDescriptor, U16CStr, U16CString,
+    VolumeInfo, VolumeParams, NTSTATUS,
 };
 
 #[derive(Debug, Clone)]
@@ -46,7 +48,7 @@ impl MemFs {
 }
 
 impl FileSystemContext for MemFs {
-    type FileContext = Context;
+    type FileContext = Arc<Context>;
 
     fn get_security_by_name(
         &self,
@@ -66,10 +68,10 @@ impl FileSystemContext for MemFs {
         _create_options: CreateOptions,
         _granted_access: FileAccessRights,
     ) -> Result<Self::FileContext, NTSTATUS> {
-        Ok(self.file_context.clone())
+        Ok(Arc::new(self.file_context.clone()))
     }
 
-    fn get_file_info(&self, _file_context: &Self::FileContext) -> Result<FileInfo, NTSTATUS> {
+    fn get_file_info(&self, _file_context: Self::FileContext) -> Result<FileInfo, NTSTATUS> {
         Ok(self.file_context.info)
     }
 
@@ -79,7 +81,7 @@ impl FileSystemContext for MemFs {
 
     fn read_directory(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _marker: Option<&U16CStr>,
     ) -> Result<Vec<(U16CString, FileInfo)>, NTSTATUS> {
         Ok(vec![])
@@ -90,7 +92,6 @@ fn create_memory_file_system(mountpoint: &U16CStr) -> FileSystem<MemFs> {
     let mut volume_params = VolumeParams::default();
 
     volume_params
-        .set_file_context_mode(FileContextMode::Descriptor)
         .set_file_system_name(mountpoint)
         .set_prefix(u16cstr!(""));
 

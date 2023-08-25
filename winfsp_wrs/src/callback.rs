@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use widestring::{U16CStr, U16CString};
 use windows_sys::Win32::Foundation::{
     STATUS_BUFFER_OVERFLOW, STATUS_NOT_IMPLEMENTED, STATUS_REPARSE, STATUS_SUCCESS,
@@ -12,11 +14,71 @@ use crate::{
         SECURITY_INFORMATION, SIZE_T, UINT32, UINT64, ULONG,
     },
     CleanupFlags, CreateFileInfo, CreateOptions, DirInfo, FileAccessRights, FileAttributes,
-    FileInfo, PSecurityDescriptor, SecurityDescriptor, VolumeInfo,
+    FileContextMode, FileInfo, PSecurityDescriptor, SecurityDescriptor, VolumeInfo,
 };
 
+/// Implement only if necessary at your own risk
+pub trait FileContextKind {
+    const MODE: FileContextMode;
+    /// # Safety
+    ///
+    /// Write the data into winfsp's `PVOID *PFileContext`
+    /// This is called in winfsp-wrs after calling FileSystemContext::open
+    unsafe fn write(self, out: *mut PVOID);
+    /// # Safety
+    ///
+    /// Retrieve the data from winfsp's `FileContext`
+    /// This is called in winfsp-wrs before calling FileSystemContext::read/write etc.
+    unsafe fn access(raw: PVOID) -> Self;
+    /// # Safety
+    ///
+    /// Retrieve the data from winfsp's `FileContext`
+    /// This is called in winfsp-wrs before calling FileSystemContext::close
+    unsafe fn access_for_close(raw: PVOID) -> Self;
+}
+
+impl<T> FileContextKind for Arc<T> {
+    const MODE: FileContextMode = FileContextMode::Descriptor;
+
+    unsafe fn write(self, out: *mut PVOID) {
+        out.write(Arc::into_raw(self).cast_mut().cast())
+    }
+
+    // the refcount must be incremented to keep the arc alive after being consumed
+    // by drop
+    unsafe fn access(raw: PVOID) -> Self {
+        Arc::increment_strong_count(raw as *const T);
+        Self::access_for_close(raw)
+    }
+
+    // the refcount should not be incremented so that when all operations are
+    // complete the arc can be freed
+    unsafe fn access_for_close(raw: PVOID) -> Self {
+        Arc::from_raw(raw as *const T)
+    }
+}
+
+impl FileContextKind for usize {
+    const MODE: FileContextMode = FileContextMode::Node;
+
+    // basic write
+    unsafe fn write(self, out: *mut PVOID) {
+        out.write(self as *mut _)
+    }
+
+    // basic access
+    unsafe fn access(raw: PVOID) -> Self {
+        raw as usize
+    }
+
+    // basic access
+    unsafe fn access_for_close(raw: PVOID) -> Self {
+        raw as usize
+    }
+}
+
 pub trait FileSystemContext {
-    type FileContext;
+    type FileContext: FileContextKind;
 
     /// Get volume information.
     fn get_volume_info(&self) -> Result<VolumeInfo, NTSTATUS>;
@@ -67,7 +129,7 @@ pub trait FileSystemContext {
     /// Overwrite a file.
     fn overwrite(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _file_attributes: FileAttributes,
         _replace_file_attributes: bool,
         _allocation_size: u64,
@@ -79,7 +141,7 @@ pub trait FileSystemContext {
     /// Cleanup a file.
     fn cleanup(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _file_name: Option<&U16CStr>,
         _flags: CleanupFlags,
     ) {
@@ -91,7 +153,7 @@ pub trait FileSystemContext {
     /// Read a file.
     fn read(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _buffer: &mut [u8],
         _offset: u64,
     ) -> Result<usize, NTSTATUS> {
@@ -101,7 +163,7 @@ pub trait FileSystemContext {
     /// Write a file.
     fn write(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _buffer: &[u8],
         _offset: u64,
         _write_to_end_of_file: bool,
@@ -111,17 +173,17 @@ pub trait FileSystemContext {
     }
 
     /// Flush a file or volume.
-    fn flush(&self, _file_context: &Self::FileContext) -> Result<(), NTSTATUS> {
+    fn flush(&self, _file_context: Self::FileContext) -> Result<(), NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
     }
 
     /// Get file or directory information.
-    fn get_file_info(&self, file_context: &Self::FileContext) -> Result<FileInfo, NTSTATUS>;
+    fn get_file_info(&self, file_context: Self::FileContext) -> Result<FileInfo, NTSTATUS>;
 
     /// Set file or directory basic information.
     fn set_basic_info(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _file_attributes: FileAttributes,
         _creation_time: u64,
         _last_access_time: u64,
@@ -134,7 +196,7 @@ pub trait FileSystemContext {
     /// Set file/allocation size.
     fn set_file_size(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _new_size: u64,
         _set_allocation_size: bool,
     ) -> Result<(), NTSTATUS> {
@@ -144,7 +206,7 @@ pub trait FileSystemContext {
     /// Determine whether a file or directory can be deleted.
     fn can_delete(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _file_name: &U16CStr,
     ) -> Result<(), NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
@@ -153,7 +215,7 @@ pub trait FileSystemContext {
     /// Renames a file or directory.
     fn rename(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _file_name: &U16CStr,
         _new_file_name: &U16CStr,
         _replace_if_exists: bool,
@@ -164,7 +226,7 @@ pub trait FileSystemContext {
     /// Get file or directory security descriptor.
     fn get_security(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
     ) -> Result<PSecurityDescriptor, NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
     }
@@ -172,7 +234,7 @@ pub trait FileSystemContext {
     /// Set file or directory security descriptor.
     fn set_security(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _security_information: u32,
         _modification_descriptor: PSecurityDescriptor,
     ) -> Result<(), NTSTATUS> {
@@ -182,14 +244,14 @@ pub trait FileSystemContext {
     /// Read a directory.
     fn read_directory(
         &self,
-        file_context: &Self::FileContext,
+        file_context: Self::FileContext,
         marker: Option<&U16CStr>,
     ) -> Result<Vec<(U16CString, FileInfo)>, NTSTATUS>;
 
     /// Get reparse point.
     fn get_reparse_point(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _file_name: &U16CStr,
         _buffer: &mut [u8],
     ) -> Result<usize, NTSTATUS> {
@@ -199,7 +261,7 @@ pub trait FileSystemContext {
     /// Set reparse point.
     fn set_reparse_point(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _file_name: &U16CStr,
         _buffer: &mut [u8],
     ) -> Result<(), NTSTATUS> {
@@ -209,7 +271,7 @@ pub trait FileSystemContext {
     /// Delete reparse point.
     fn delete_reparse_point(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _file_name: &U16CStr,
         _buffer: &mut [u8],
     ) -> Result<(), NTSTATUS> {
@@ -219,7 +281,7 @@ pub trait FileSystemContext {
     /// Get named streams information.
     fn get_stream_info(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _buffer: &mut [u8],
     ) -> Result<usize, NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
@@ -229,7 +291,7 @@ pub trait FileSystemContext {
     /// directory.
     fn get_dir_info_by_name(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _file_name: &U16CStr,
     ) -> Result<FileInfo, NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
@@ -238,7 +300,7 @@ pub trait FileSystemContext {
     /// Process control code.
     fn control(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _control_code: u32,
         _input_buffer: &[u8],
         _output_buffer: &mut [u8],
@@ -249,7 +311,7 @@ pub trait FileSystemContext {
     /// Set the file delete flag.
     fn set_delete(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _file_name: &U16CStr,
         _delete_file: bool,
     ) -> Result<(), NTSTATUS> {
@@ -257,14 +319,14 @@ pub trait FileSystemContext {
     }
 
     /// Get extended attributes.
-    fn get_ea(&self, _file_context: &Self::FileContext, _buffer: &[u8]) -> Result<usize, NTSTATUS> {
+    fn get_ea(&self, _file_context: Self::FileContext, _buffer: &[u8]) -> Result<usize, NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
     }
 
     /// Set extended attributes.
     fn set_ea(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         _buffer: &[u8],
     ) -> Result<FileInfo, NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
@@ -444,7 +506,7 @@ impl Interface {
         ) {
             Err(e) => e,
             Ok(fctx) => {
-                *p_file_context = Box::into_raw(Box::new(fctx)).cast();
+                C::FileContext::write(fctx, p_file_context);
                 Self::get_file_info_ext::<C>(file_system, *p_file_context, file_info)
             }
         }
@@ -464,7 +526,7 @@ impl Interface {
         flags: ULONG,
     ) {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
 
         let file_name = if file_name.is_null() {
             None
@@ -483,7 +545,7 @@ impl Interface {
         file_context: PVOID,
     ) {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = *Box::from_raw(file_context.cast());
+        let fctx = C::FileContext::access_for_close(file_context);
         C::close(fs, fctx);
     }
 
@@ -505,7 +567,7 @@ impl Interface {
         p_bytes_transferred: PULONG,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
         let buffer = std::slice::from_raw_parts_mut(buffer.cast(), length as usize);
 
         match C::read(fs, fctx, buffer, offset) {
@@ -544,7 +606,7 @@ impl Interface {
         file_info: *mut FSP_FSCTL_FILE_INFO,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
         let buffer = std::slice::from_raw_parts(buffer.cast(), length as usize);
 
         match C::write(
@@ -578,7 +640,7 @@ impl Interface {
         file_info: *mut FSP_FSCTL_FILE_INFO,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
 
         match C::flush(fs, fctx) {
             Err(e) => e,
@@ -599,7 +661,7 @@ impl Interface {
         file_info: *mut FSP_FSCTL_FILE_INFO,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
 
         match C::get_file_info(fs, fctx) {
             Err(e) => e,
@@ -639,7 +701,7 @@ impl Interface {
         file_info: *mut FSP_FSCTL_FILE_INFO,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
 
         match C::set_basic_info(
             fs,
@@ -673,7 +735,7 @@ impl Interface {
         file_info: *mut FSP_FSCTL_FILE_INFO,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
 
         match C::set_file_size(fs, fctx, new_size, set_allocation_size != 0) {
             Err(e) => e,
@@ -694,7 +756,7 @@ impl Interface {
         file_name: PWSTR,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
         let file_name = U16CStr::from_ptr_str(file_name);
 
         match C::can_delete(fs, fctx, file_name) {
@@ -718,7 +780,7 @@ impl Interface {
         replace_if_exists: BOOLEAN,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
         let file_name = U16CStr::from_ptr_str(file_name);
         let new_file_name = U16CStr::from_ptr_str(new_file_name);
 
@@ -745,7 +807,7 @@ impl Interface {
         p_security_descriptor_size: *mut SIZE_T,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
 
         match C::get_security(fs, fctx) {
             Err(e) => e,
@@ -780,7 +842,7 @@ impl Interface {
         modification_descriptor: PSECURITY_DESCRIPTOR,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
 
         let modification_descriptor = PSecurityDescriptor::from_ptr(modification_descriptor);
 
@@ -815,7 +877,7 @@ impl Interface {
         p_bytes_transferred: PULONG,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
 
         let marker = if marker.is_null() {
             None
@@ -935,7 +997,7 @@ impl Interface {
         p_size: PSIZE_T,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
         let file_name = U16CStr::from_ptr_str(file_name);
         let buffer = std::slice::from_raw_parts_mut(buffer.cast(), *p_size as usize);
 
@@ -964,7 +1026,7 @@ impl Interface {
         size: SIZE_T,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
         let file_name = U16CStr::from_ptr_str(file_name);
         let buffer = std::slice::from_raw_parts_mut(buffer.cast(), size as usize);
 
@@ -988,7 +1050,7 @@ impl Interface {
         size: SIZE_T,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
         let file_name = U16CStr::from_ptr_str(file_name);
         let buffer = std::slice::from_raw_parts_mut(buffer.cast(), size as usize);
 
@@ -1014,7 +1076,7 @@ impl Interface {
         p_bytes_transferred: PULONG,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
         let buffer = std::slice::from_raw_parts_mut(buffer.cast(), length as usize);
 
         match C::get_stream_info(fs, fctx, buffer) {
@@ -1042,7 +1104,7 @@ impl Interface {
         dir_info: *mut FSP_FSCTL_DIR_INFO,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
         let file_name = U16CStr::from_ptr_str(file_name);
 
         match C::get_dir_info_by_name(fs, fctx, file_name) {
@@ -1084,7 +1146,7 @@ impl Interface {
         p_bytes_transferred: PULONG,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
         let input = std::slice::from_raw_parts(input_buffer.cast(), input_buffer_length as usize);
         let output =
             std::slice::from_raw_parts_mut(output_buffer.cast(), output_buffer_length as usize);
@@ -1114,7 +1176,7 @@ impl Interface {
         delete_file_w: BOOLEAN,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
         let file_name = U16CStr::from_ptr_str(file_name);
 
         match C::set_delete(fs, fctx, file_name, delete_file_w != 0) {
@@ -1189,7 +1251,7 @@ impl Interface {
         ) {
             Err(e) => e,
             Ok(fctx) => {
-                *p_file_context = Box::into_raw(Box::new(fctx)).cast();
+                C::FileContext::write(fctx, p_file_context);
                 Self::get_file_info_ext::<C>(file_system, *p_file_context, file_info)
             }
         }
@@ -1219,7 +1281,7 @@ impl Interface {
         file_info: *mut FSP_FSCTL_FILE_INFO,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
         let buffer = std::slice::from_raw_parts(ea.cast(), ea_length as usize);
 
         match C::overwrite(
@@ -1251,7 +1313,7 @@ impl Interface {
         p_bytes_transferred: PULONG,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
         let buffer = std::slice::from_raw_parts(ea.cast(), ea_length as usize);
 
         match C::get_ea(fs, fctx, buffer) {
@@ -1280,7 +1342,7 @@ impl Interface {
         file_info: *mut FSP_FSCTL_FILE_INFO,
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
-        let fctx = &*file_context.cast::<C::FileContext>();
+        let fctx = C::FileContext::access(file_context);
         let buffer = std::slice::from_raw_parts(ea.cast(), ea_length as usize);
 
         match C::set_ea(fs, fctx, buffer) {

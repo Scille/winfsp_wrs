@@ -22,7 +22,7 @@ use crate::{
         FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FINE,
         FSP_FSCTL_VOLUME_PARAMS, NTSTATUS,
     },
-    FileSystemContext, Interface,
+    FileContextKind, FileSystemContext, Interface,
 };
 #[cfg(feature = "icon")]
 use crate::{FileAccessRights, FileAttributes, FileCreationDisposition, FileShareMode};
@@ -61,6 +61,9 @@ pub enum FileContextMode {
     /// - UmFileContextIsFullContext: 0
     /// - UmFileContextIsUserContext2: 1
     Descriptor,
+    /// - UmFileContextIsFullContext: 1
+    /// - UmFileContextIsUserContext2: 0
+    Full,
 }
 
 impl VolumeParams {
@@ -71,7 +74,7 @@ impl VolumeParams {
         }
     }
 
-    pub fn set_file_context_mode(&mut self, mode: FileContextMode) -> &mut Self {
+    fn set_file_context_mode(&mut self, mode: FileContextMode) -> &mut Self {
         match mode {
             FileContextMode::Node => {
                 self.0.set_UmFileContextIsFullContext(0);
@@ -80,6 +83,10 @@ impl VolumeParams {
             FileContextMode::Descriptor => {
                 self.0.set_UmFileContextIsFullContext(0);
                 self.0.set_UmFileContextIsUserContext2(1);
+            }
+            FileContextMode::Full => {
+                self.0.set_UmFileContextIsFullContext(1);
+                self.0.set_UmFileContextIsUserContext2(0);
             }
         }
         self
@@ -313,13 +320,17 @@ impl<Ctx: FileSystemContext> FileSystem<Ctx> {
     /// drive letter counting downwards from Z: as its mount point.
     /// - Start the file system dispatcher.
     pub fn new(
-        params: Params,
+        mut params: Params,
         mountpoint: Option<&U16CStr>,
         context: Ctx,
     ) -> Result<Self, NTSTATUS> {
         unsafe {
             let mut p_inner = std::ptr::null_mut();
             let interface = Box::into_raw(Box::new(Interface::interface::<Ctx>()));
+
+            params
+                .volume_params
+                .set_file_context_mode(Ctx::FileContext::MODE);
 
             let device_name = params.volume_params.device_path();
             let res = FspFileSystemCreate(

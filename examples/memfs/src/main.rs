@@ -6,8 +6,8 @@ use std::{
 };
 use winfsp_wrs::{
     filetime_now, u16cstr, CleanupFlags, CreateFileInfo, CreateOptions, FileAccessRights,
-    FileAttributes, FileContextMode, FileInfo, FileSystem, FileSystemContext, PSecurityDescriptor,
-    Params, SecurityDescriptor, U16CStr, U16CString, VolumeInfo, VolumeParams, NTSTATUS,
+    FileAttributes, FileInfo, FileSystem, FileSystemContext, PSecurityDescriptor, Params,
+    SecurityDescriptor, U16CStr, U16CString, VolumeInfo, VolumeParams, NTSTATUS,
     STATUS_ACCESS_DENIED, STATUS_DIRECTORY_NOT_EMPTY, STATUS_END_OF_FILE,
     STATUS_MEDIA_WRITE_PROTECTED, STATUS_NOT_A_DIRECTORY, STATUS_OBJECT_NAME_COLLISION,
     STATUS_OBJECT_NAME_NOT_FOUND,
@@ -338,7 +338,7 @@ impl FileSystemContext for MemFs {
 
     fn overwrite(
         &self,
-        file_context: &Self::FileContext,
+        file_context: Self::FileContext,
         mut file_attributes: FileAttributes,
         replace_file_attributes: bool,
         allocation_size: u64,
@@ -376,7 +376,7 @@ impl FileSystemContext for MemFs {
 
     fn cleanup(
         &self,
-        file_context: &Self::FileContext,
+        file_context: Self::FileContext,
         file_name: Option<&U16CStr>,
         flags: CleanupFlags,
     ) {
@@ -433,7 +433,7 @@ impl FileSystemContext for MemFs {
 
     fn read(
         &self,
-        file_context: &Self::FileContext,
+        file_context: Self::FileContext,
         buffer: &mut [u8],
         offset: u64,
     ) -> Result<usize, NTSTATUS> {
@@ -451,7 +451,7 @@ impl FileSystemContext for MemFs {
 
     fn write(
         &self,
-        file_context: &Self::FileContext,
+        file_context: Self::FileContext,
         buffer: &[u8],
         offset: u64,
         write_to_end_of_file: bool,
@@ -472,11 +472,11 @@ impl FileSystemContext for MemFs {
         }
     }
 
-    fn flush(&self, _file_context: &Self::FileContext) -> Result<(), NTSTATUS> {
+    fn flush(&self, _file_context: Self::FileContext) -> Result<(), NTSTATUS> {
         Ok(())
     }
 
-    fn get_file_info(&self, file_context: &Self::FileContext) -> Result<FileInfo, NTSTATUS> {
+    fn get_file_info(&self, file_context: Self::FileContext) -> Result<FileInfo, NTSTATUS> {
         match file_context.lock().unwrap().deref() {
             Obj::File(file_obj) => Ok(file_obj.info),
             Obj::Folder(folder_obj) => Ok(folder_obj.info),
@@ -485,7 +485,7 @@ impl FileSystemContext for MemFs {
 
     fn set_basic_info(
         &self,
-        file_context: &Self::FileContext,
+        file_context: Self::FileContext,
         file_attributes: FileAttributes,
         creation_time: u64,
         last_access_time: u64,
@@ -538,7 +538,7 @@ impl FileSystemContext for MemFs {
 
     fn set_file_size(
         &self,
-        file_context: &Self::FileContext,
+        file_context: Self::FileContext,
         new_size: u64,
         set_allocation_size: bool,
     ) -> Result<(), NTSTATUS> {
@@ -564,7 +564,7 @@ impl FileSystemContext for MemFs {
 
     fn rename(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         file_name: &U16CStr,
         new_file_name: &U16CStr,
         replace_if_exists: bool,
@@ -611,7 +611,7 @@ impl FileSystemContext for MemFs {
 
     fn get_security(
         &self,
-        file_context: &Self::FileContext,
+        file_context: Self::FileContext,
     ) -> Result<PSecurityDescriptor, NTSTATUS> {
         match file_context.lock().unwrap().deref() {
             Obj::File(file_obj) => Ok(file_obj.security_descriptor.as_ptr()),
@@ -621,7 +621,7 @@ impl FileSystemContext for MemFs {
 
     fn set_security(
         &self,
-        file_context: &Self::FileContext,
+        file_context: Self::FileContext,
         security_information: u32,
         modification_descriptor: PSecurityDescriptor,
     ) -> Result<(), NTSTATUS> {
@@ -649,7 +649,7 @@ impl FileSystemContext for MemFs {
 
     fn read_directory(
         &self,
-        file_context: &Self::FileContext,
+        file_context: Self::FileContext,
         marker: Option<&U16CStr>,
     ) -> Result<Vec<(U16CString, FileInfo)>, NTSTATUS> {
         let entries = self.entries.lock().unwrap();
@@ -700,7 +700,7 @@ impl FileSystemContext for MemFs {
 
     fn set_delete(
         &self,
-        _file_context: &Self::FileContext,
+        _file_context: Self::FileContext,
         file_name: &U16CStr,
         _delete_file: bool,
     ) -> Result<(), NTSTATUS> {
@@ -736,7 +736,6 @@ fn create_memory_file_system(mountpoint: &U16CStr) -> FileSystem<MemFs> {
         .set_unicode_on_disk(true)
         .set_persistent_acls(true)
         .set_post_cleanup_when_modified_only(true)
-        .set_file_context_mode(FileContextMode::Descriptor)
         .set_file_system_name(mountpoint)
         .set_prefix(u16cstr!(""));
 

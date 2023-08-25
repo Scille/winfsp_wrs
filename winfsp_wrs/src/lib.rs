@@ -9,7 +9,7 @@ mod security;
 
 pub(crate) use callback::Interface;
 
-pub use callback::FileSystemContext;
+pub use callback::{FileContextKind, FileSystemContext};
 #[cfg(feature = "icon")]
 pub use file_system::set_folder_icon;
 pub use file_system::{

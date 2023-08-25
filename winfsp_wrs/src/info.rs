@@ -187,3 +187,9 @@ impl DirInfo {
         }
     }
 }
+
+pub enum WriteMode {
+    Normal,
+    Constrained,
+    StartEOF,
+}

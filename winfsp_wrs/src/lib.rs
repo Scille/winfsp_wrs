@@ -20,7 +20,7 @@ pub use flags::{
     CleanupFlags, CreateOptions, FileAccessRights, FileAttributes, FileCreationDisposition,
     FileShareMode,
 };
-pub use info::{CreateFileInfo, DirInfo, FileInfo, VolumeInfo};
+pub use info::{CreateFileInfo, DirInfo, FileInfo, VolumeInfo, WriteMode};
 pub use init::init;
 pub use security::{PSecurityDescriptor, SecurityDescriptor};
 

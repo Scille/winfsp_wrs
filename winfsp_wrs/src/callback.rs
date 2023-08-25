@@ -14,7 +14,7 @@ use crate::{
         SECURITY_INFORMATION, SIZE_T, UINT32, UINT64, ULONG,
     },
     CleanupFlags, CreateFileInfo, CreateOptions, DirInfo, FileAccessRights, FileAttributes,
-    FileContextMode, FileInfo, PSecurityDescriptor, SecurityDescriptor, VolumeInfo,
+    FileContextMode, FileInfo, PSecurityDescriptor, SecurityDescriptor, VolumeInfo, WriteMode,
 };
 
 /// Implement only if necessary at your own risk
@@ -166,8 +166,7 @@ pub trait FileSystemContext {
         _file_context: Self::FileContext,
         _buffer: &[u8],
         _offset: u64,
-        _write_to_end_of_file: bool,
-        _constrained_io: bool,
+        _mode: WriteMode,
     ) -> Result<usize, NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
     }
@@ -609,14 +608,17 @@ impl Interface {
         let fctx = C::FileContext::access(file_context);
         let buffer = std::slice::from_raw_parts(buffer.cast(), length as usize);
 
-        match C::write(
-            fs,
-            fctx,
-            buffer,
-            offset,
-            write_to_end_of_file != 0,
-            constrained_io != 0,
-        ) {
+        let mode = match (write_to_end_of_file != 0, constrained_io != 0) {
+            (false, false) => WriteMode::Normal,
+            (false, true) => WriteMode::Constrained,
+            (true, false) => WriteMode::StartEOF,
+            (true, true) => {
+                *p_bytes_transferred = 0;
+                return Self::get_file_info_ext::<C>(file_system, file_context, file_info);
+            }
+        };
+
+        match C::write(fs, fctx, buffer, offset, mode) {
             Err(e) => e,
             Ok(bytes_transfered) => {
                 *p_bytes_transferred = bytes_transfered as ULONG;

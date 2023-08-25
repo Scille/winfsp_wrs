@@ -7,7 +7,7 @@ use std::{
 use winfsp_wrs::{
     filetime_now, u16cstr, CleanupFlags, CreateFileInfo, CreateOptions, FileAccessRights,
     FileAttributes, FileInfo, FileSystem, FileSystemContext, PSecurityDescriptor, Params,
-    SecurityDescriptor, U16CStr, U16CString, VolumeInfo, VolumeParams, NTSTATUS,
+    SecurityDescriptor, U16CStr, U16CString, VolumeInfo, VolumeParams, WriteMode, NTSTATUS,
     STATUS_ACCESS_DENIED, STATUS_DIRECTORY_NOT_EMPTY, STATUS_END_OF_FILE,
     STATUS_MEDIA_WRITE_PROTECTED, STATUS_NOT_A_DIRECTORY, STATUS_OBJECT_NAME_COLLISION,
     STATUS_OBJECT_NAME_NOT_FOUND,
@@ -133,10 +133,7 @@ impl FileObj {
         &self.data[offset..end_offset]
     }
 
-    fn write(&mut self, buffer: &[u8], mut offset: usize, write_to_end_of_file: bool) -> usize {
-        if write_to_end_of_file {
-            offset = self.info.file_size() as usize
-        }
+    fn write(&mut self, buffer: &[u8], offset: usize) -> usize {
         let end_offset = offset + buffer.len();
         if end_offset as u64 > self.info.file_size() {
             self.set_file_size(end_offset)
@@ -454,18 +451,20 @@ impl FileSystemContext for MemFs {
         file_context: Self::FileContext,
         buffer: &[u8],
         offset: u64,
-        write_to_end_of_file: bool,
-        constrained_io: bool,
+        mode: WriteMode,
     ) -> Result<usize, NTSTATUS> {
         if self.read_only {
             return Err(STATUS_MEDIA_WRITE_PROTECTED);
         }
 
         if let Obj::File(file_obj) = file_context.lock().unwrap().deref_mut() {
-            if constrained_io {
-                Ok(file_obj.constrained_write(buffer, offset as usize))
-            } else {
-                Ok(file_obj.write(buffer, offset as usize, write_to_end_of_file))
+            match mode {
+                WriteMode::Constrained => Ok(file_obj.constrained_write(buffer, offset as usize)),
+                WriteMode::Normal => Ok(file_obj.write(buffer, offset as usize)),
+                WriteMode::StartEOF => {
+                    let offset = file_obj.info.file_size();
+                    Ok(file_obj.write(buffer, offset as usize))
+                }
             }
         } else {
             unreachable!()

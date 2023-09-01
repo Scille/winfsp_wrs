@@ -11,7 +11,9 @@ fn winfsp_tests() {
         .spawn()
         .unwrap();
 
-    while !Path::new("Z:").exists() {}
+    let path = Path::new("Z:");
+
+    while !path.exists() {}
 
     let exe =
         std::env::var("WINFSP_TEST_EXE").expect("specify the path of winfsp_tests in TEST_EXE");
@@ -30,7 +32,7 @@ fn winfsp_tests() {
             "-reparse_symlink_relative_test",
             "-stream_*",
         ])
-        .current_dir("Z:")
+        .current_dir(path)
         .spawn()
         .unwrap();
 

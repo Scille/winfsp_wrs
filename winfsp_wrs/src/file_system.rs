@@ -250,12 +250,16 @@ impl VolumeParams {
     }
 
     pub fn set_prefix(&mut self, val: &U16CStr) -> &mut Self {
-        self.0.Prefix[..val.len()].copy_from_slice(val.as_slice());
+        let len = std::cmp::min(self.0.Prefix.len(), val.len());
+
+        self.0.Prefix[..len].copy_from_slice(&val.as_slice()[..len]);
         self
     }
 
     pub fn set_file_system_name(&mut self, val: &U16CStr) -> &mut Self {
-        self.0.FileSystemName[..val.len()].copy_from_slice(val.as_slice());
+        let len = std::cmp::min(self.0.FileSystemName.len(), val.len());
+
+        self.0.FileSystemName[..len].copy_from_slice(&val.as_slice()[..len]);
         self
     }
 

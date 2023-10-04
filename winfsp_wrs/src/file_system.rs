@@ -249,18 +249,34 @@ impl VolumeParams {
         self
     }
 
-    pub fn set_prefix(&mut self, val: &U16CStr) -> &mut Self {
-        let len = std::cmp::min(self.0.Prefix.len(), val.len());
+    /// # Error:
+    /// The value is too long (max length: 192), so it has been truncated.
+    pub fn set_prefix(&mut self, val: &U16CStr) -> Result<&mut Self, &mut Self> {
+        let max_len = self.0.Prefix.len();
 
-        self.0.Prefix[..len].copy_from_slice(&val.as_slice()[..len]);
-        self
+        if val.len() > max_len {
+            self.0.Prefix.copy_from_slice(&val.as_slice()[..max_len]);
+            Err(self)
+        } else {
+            self.0.Prefix[..val.len()].copy_from_slice(val.as_slice());
+            Ok(self)
+        }
     }
 
-    pub fn set_file_system_name(&mut self, val: &U16CStr) -> &mut Self {
-        let len = std::cmp::min(self.0.FileSystemName.len(), val.len());
+    /// # Error:
+    /// The value is too long (max length: 16), so it has been truncated.
+    pub fn set_file_system_name(&mut self, val: &U16CStr) -> Result<&mut Self, &mut Self> {
+        let max_len = self.0.FileSystemName.len();
 
-        self.0.FileSystemName[..len].copy_from_slice(&val.as_slice()[..len]);
-        self
+        if val.len() > max_len {
+            self.0
+                .FileSystemName
+                .copy_from_slice(&val.as_slice()[..max_len]);
+            Err(self)
+        } else {
+            self.0.FileSystemName[..val.len()].copy_from_slice(val.as_slice());
+            Ok(self)
+        }
     }
 
     pub fn set_volume_info_timeout(&mut self, val: u32) -> &mut Self {

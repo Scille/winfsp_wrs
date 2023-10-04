@@ -736,7 +736,9 @@ fn create_memory_file_system(mountpoint: &U16CStr) -> FileSystem<MemFs> {
         .set_persistent_acls(true)
         .set_post_cleanup_when_modified_only(true)
         .set_file_system_name(mountpoint)
-        .set_prefix(u16cstr!(""));
+        .unwrap()
+        .set_prefix(u16cstr!(""))
+        .unwrap();
 
     let params = Params {
         volume_params,

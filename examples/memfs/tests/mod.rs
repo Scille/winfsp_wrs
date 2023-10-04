@@ -6,7 +6,7 @@ use std::{
 #[test]
 fn winfsp_tests() {
     let mut fs = Command::new("cargo")
-        .args(["run", "--bin", "memfs"])
+        .args(["run", "--bin", "memfs", "--", "Z:"])
         .stdout(Stdio::null())
         .spawn()
         .unwrap();
@@ -40,4 +40,27 @@ fn winfsp_tests() {
     fs.kill().unwrap();
 
     assert!(code.success());
+}
+
+#[test]
+fn init_is_idempotent() {
+    winfsp_wrs::init().unwrap();
+    winfsp_wrs::init().unwrap();
+
+    let mut fs = Command::new("cargo")
+        .args(["run", "--bin", "memfs", "--", "Y:"])
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+
+    let path = Path::new("Y:");
+
+    while !path.exists() {}
+
+    let dir = path.join("foo");
+
+    std::fs::create_dir(&dir).unwrap();
+    assert!(dir.exists());
+
+    fs.kill().unwrap();
 }

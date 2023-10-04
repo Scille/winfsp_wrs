@@ -658,7 +658,7 @@ impl FileSystemContext for MemFs {
             Obj::Folder(folder_obj) => {
                 let mut res_entries = vec![];
 
-                if folder_obj.path != self.root_path {
+                if folder_obj.path != self.root_path && marker.is_none() {
                     let parent_path = folder_obj.path.parent().unwrap();
                     res_entries.push((u16cstr!(".").to_owned(), folder_obj.info));
                     let parent_obj = entries[parent_path].lock().unwrap();

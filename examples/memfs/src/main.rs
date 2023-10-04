@@ -753,8 +753,10 @@ fn create_memory_file_system(mountpoint: &U16CStr) -> FileSystem<MemFs> {
 
 fn main() {
     winfsp_wrs::init().unwrap();
+    let path = std::env::args().nth(1).expect("Missing mountpoint path");
+
     println!("Starting FS");
-    let mut fs = create_memory_file_system(u16cstr!("Z:"));
+    let mut fs = create_memory_file_system(&U16CString::from_str(path).unwrap());
 
     let mut input = String::new();
 

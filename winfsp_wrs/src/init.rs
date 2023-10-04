@@ -53,6 +53,7 @@ fn get_lplibfilename() -> Result<U16CString, u32> {
 /// You should also add `winfsp_build::build()` in your `build.rs` to allow
 /// delayload, which is needed because `winfsp_wrs` depends on `WinFSP's dll`
 /// which is not in Windows path or at the same location of your binary.
+/// # Note: This funcion is idempotent, hence calling it multiple times is safe.
 pub fn init() -> Result<(), u32> {
     unsafe {
         if LoadLibraryW(get_lplibfilename()?.as_ptr().cast_mut()) == 0 {

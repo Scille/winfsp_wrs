@@ -1,6 +1,7 @@
 use std::{
     path::Path,
     process::{Command, Stdio},
+    time::Duration,
 };
 
 #[test]
@@ -13,7 +14,9 @@ fn winfsp_tests() {
 
     let path = Path::new("Z:");
 
-    while !path.exists() {}
+    while !path.exists() {
+        std::thread::sleep(Duration::from_millis(100))
+    }
 
     let exe =
         std::env::var("WINFSP_TEST_EXE").expect("specify the path of winfsp_tests in TEST_EXE");

@@ -35,16 +35,19 @@ icon = [
 ]
 
 [build-dependencies]
-bindgen = "0.66.1"
+bindgen = "0.68.1"
 registry = { version = "1.2.3" }
 
 [dependencies]
-chrono = "0.4.26"
+chrono = "0.4.33"
 widestring = "1.0.2"
 
 [dependencies.windows-sys]
-version = "0.48.0"
+version = "0.52.0"
 features = [
+    "Wdk",
+    "Wdk_Storage",
+    "Wdk_Storage_FileSystem",
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Security_Authorization",

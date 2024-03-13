@@ -29,3 +29,8 @@ cargo run -p memfs my-mountpoint
 ## Testing
 
 Download winfsp-tests: `https://github.com/winfsp/winfsp/releases/`
+
+`winfsp-tests` itself depends on WinFSP's DLL, hence the easiest way to avoid troubles
+is to put the `winfsp-tests` executable in the `C:/Program Files (x86)/WinFsp/bin/` install folder
+(the alternative being to copy `C:/Program Files (x86)/WinFsp/bin/winfsp-x64.dll` in the directory
+where `winfsp-tests` executable resides).

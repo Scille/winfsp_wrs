@@ -84,7 +84,7 @@ pub trait FileSystemContext {
     fn get_volume_info(&self) -> Result<VolumeInfo, NTSTATUS>;
 
     /// Set volume label.
-    fn set_volume_label(&self, _volume_label: &U16CStr) -> Result<(), NTSTATUS> {
+    fn set_volume_label(&self, _volume_label: &U16CStr) -> Result<VolumeInfo, NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
     }
 
@@ -380,7 +380,10 @@ impl Interface {
 
         match C::set_volume_label(fs, U16CStr::from_ptr_str(volume_label)) {
             Err(e) => e,
-            Ok(()) => Self::get_volume_info_ext::<C>(file_system, volume_info),
+            Ok(vi) => {
+                *volume_info = vi.0;
+                STATUS_SUCCESS
+            }
         }
     }
 

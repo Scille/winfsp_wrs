@@ -5,9 +5,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 use winfsp_wrs::{
-    filetime_now, u16cstr, CleanupFlags, CreateFileInfo, CreateOptions, FileAccessRights,
+    filetime_now, u16cstr, u16str, CleanupFlags, CreateFileInfo, CreateOptions, FileAccessRights,
     FileAttributes, FileInfo, FileSystem, FileSystemContext, PSecurityDescriptor, Params,
-    SecurityDescriptor, U16CStr, U16CString, VolumeInfo, VolumeParams, WriteMode, NTSTATUS,
+    SecurityDescriptor, U16CStr, U16CString, U16Str, VolumeInfo, VolumeParams, WriteMode, NTSTATUS,
     STATUS_ACCESS_DENIED, STATUS_DIRECTORY_NOT_EMPTY, STATUS_END_OF_FILE,
     STATUS_MEDIA_WRITE_PROTECTED, STATUS_NOT_A_DIRECTORY, STATUS_OBJECT_NAME_COLLISION,
     STATUS_OBJECT_NAME_NOT_FOUND,
@@ -203,7 +203,7 @@ impl MemFs {
     const MAX_FILE_SIZE: u64 = 16 * 1024 * 1024;
     const FILE_NODES: u64 = 1;
 
-    fn new(volume_label: &U16CStr, read_only: bool) -> Self {
+    fn new(volume_label: &U16Str, read_only: bool) -> Self {
         let root_path = PathBuf::from("/");
         let mut entries = HashMap::new();
 
@@ -220,11 +220,14 @@ impl MemFs {
 
         Self {
             entries: Arc::new(Mutex::new(entries)),
-            volume_info: Arc::new(Mutex::new(VolumeInfo::new(
-                Self::MAX_FILE_NODES * Self::MAX_FILE_SIZE,
-                (Self::MAX_FILE_NODES - Self::FILE_NODES) * Self::MAX_FILE_SIZE,
-                volume_label,
-            ))),
+            volume_info: Arc::new(Mutex::new(
+                VolumeInfo::new(
+                    Self::MAX_FILE_NODES * Self::MAX_FILE_SIZE,
+                    (Self::MAX_FILE_NODES - Self::FILE_NODES) * Self::MAX_FILE_SIZE,
+                    volume_label,
+                )
+                .expect("volume label too long"),
+            )),
             read_only,
             root_path,
         }
@@ -235,15 +238,17 @@ impl FileSystemContext for MemFs {
     type FileContext = Arc<Mutex<Obj>>;
 
     fn get_volume_info(&self) -> Result<VolumeInfo, NTSTATUS> {
-        Ok(*self.volume_info.lock().unwrap())
+        Ok(self.volume_info.lock().unwrap().clone())
     }
 
-    fn set_volume_label(&self, volume_label: &U16CStr) -> Result<(), NTSTATUS> {
-        self.volume_info
-            .lock()
-            .unwrap()
-            .set_volume_label(volume_label);
-        Ok(())
+    fn set_volume_label(&self, volume_label: &U16CStr) -> Result<VolumeInfo, NTSTATUS> {
+        let mut guard = self.volume_info.lock().unwrap();
+
+        guard
+            .set_volume_label(volume_label.as_ustr())
+            .expect("volume label size already checked");
+
+        Ok(guard.clone())
     }
 
     fn get_security_by_name(
@@ -748,7 +753,7 @@ fn create_memory_file_system(mountpoint: &U16CStr) -> FileSystem<MemFs> {
     FileSystem::new(
         params,
         Some(mountpoint),
-        MemFs::new(u16cstr!("memfs"), false),
+        MemFs::new(u16str!("memfs"), false),
     )
     .unwrap()
 }

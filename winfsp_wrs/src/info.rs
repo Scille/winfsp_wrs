@@ -1,4 +1,4 @@
-use widestring::U16CStr;
+use widestring::{U16CStr, U16Str};
 
 use crate::{
     ext::{FSP_FSCTL_DIR_INFO, FSP_FSCTL_FILE_INFO, FSP_FSCTL_VOLUME_INFO},
@@ -117,43 +117,73 @@ impl FileInfo {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct VolumeInfo(pub(crate) FSP_FSCTL_VOLUME_INFO);
 
+#[derive(Debug)]
+pub struct VolumeLabelNameTooLong;
+
 impl VolumeInfo {
-    const VOLUME_LABEL_MAX_LEN: usize = 31;
+    // Max len correspond to the entire `FSP_FSCTL_VOLUME_INFO.VolumeLabel` buffer given
+    // there should be no null-terminator (`FSP_FSCTL_VOLUME_INFO.VolumeLabelLength` is
+    // used instead).
+    const VOLUME_LABEL_MAX_LEN: usize = 32;
 
-    pub fn new(total_size: u64, free_size: u64, volume_label: &U16CStr) -> Self {
-        assert!(volume_label.len() <= Self::VOLUME_LABEL_MAX_LEN);
+    pub fn new(
+        total_size: u64,
+        free_size: u64,
+        volume_label: &U16Str,
+    ) -> Result<Self, VolumeLabelNameTooLong> {
+        if volume_label.len() > Self::VOLUME_LABEL_MAX_LEN {
+            return Err(VolumeLabelNameTooLong);
+        }
 
-        let mut vl = [0; Self::VOLUME_LABEL_MAX_LEN + 1];
+        let mut vl = [0; Self::VOLUME_LABEL_MAX_LEN];
         vl[..volume_label.len()].copy_from_slice(volume_label.as_slice());
 
-        Self(FSP_FSCTL_VOLUME_INFO {
+        Ok(Self(FSP_FSCTL_VOLUME_INFO {
             TotalSize: total_size,
             FreeSize: free_size,
+            // It is unintuitive, but the length is in bytes, not in u16s
             VolumeLabelLength: (volume_label.len() * std::mem::size_of::<u16>()) as u16,
             VolumeLabel: vl,
-        })
+        }))
     }
 
     pub fn total_size(&self) -> u64 {
         self.0.TotalSize
     }
 
+    pub fn set_total_size(&mut self, size: u64) {
+        self.0.TotalSize = size;
+    }
+
     pub fn free_size(&self) -> u64 {
         self.0.FreeSize
     }
 
-    pub fn volume_label(&self) -> &U16CStr {
-        U16CStr::from_slice(&self.0.VolumeLabel[..self.0.VolumeLabelLength as usize]).unwrap()
+    pub fn set_free_size(&mut self, size: u64) {
+        self.0.FreeSize = size;
     }
 
-    pub fn set_volume_label(&mut self, volume_label: &U16CStr) {
-        assert!(volume_label.len() <= Self::VOLUME_LABEL_MAX_LEN);
+    pub fn volume_label(&self) -> &U16Str {
+        let len_in_u16s = self.0.VolumeLabelLength as usize / std::mem::size_of::<u16>();
+        U16Str::from_slice(&self.0.VolumeLabel[..len_in_u16s])
+    }
 
-        self.0.VolumeLabelLength = volume_label.len() as u16;
+    pub fn set_volume_label(
+        &mut self,
+        volume_label: &U16Str,
+    ) -> Result<(), VolumeLabelNameTooLong> {
+        if volume_label.len() > Self::VOLUME_LABEL_MAX_LEN {
+            return Err(VolumeLabelNameTooLong);
+        }
+
+        // It is unintuitive, but the length is in bytes, not in u16s
+        self.0.VolumeLabelLength = (volume_label.len() * std::mem::size_of::<u16>()) as u16;
         self.0.VolumeLabel[..volume_label.len()].copy_from_slice(volume_label.as_slice());
+
+        Ok(())
     }
 }
 

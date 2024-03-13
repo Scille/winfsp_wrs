@@ -354,6 +354,9 @@ impl<Ctx: FileSystemContext> FileSystem<Ctx> {
 
             let device_name = params.volume_params.device_path();
             let res = FspFileSystemCreate(
+                // `device_name` contains const data, so this `cast_mut` is a bit scary !
+                // However, it is only a limitation in the type system (we need to cast
+                // to `PWSTR`): in practice this parameter in never modified.
                 device_name.as_ptr().cast_mut(),
                 &params.volume_params.0,
                 interface,

@@ -30,11 +30,23 @@ use crate::ext::{
     FspCleanupSetChangeTime, FspCleanupSetLastAccessTime, FspCleanupSetLastWriteTime,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+macro_rules! impl_debug_flags {
+    ($name:ident) => {
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_tuple("FileAttributes").field(&format_args!("0x{:X}", self.0)).finish()
+            }
+        }
+    };
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 /// File attributes are metadata values stored by the file system on disk and
 /// are used by the system and are available to developers via various file I/O
 /// APIs.
 pub struct FileAttributes(pub FILE_FLAGS_AND_ATTRIBUTES);
+
+impl_debug_flags!(FileAttributes);
 
 impl FileAttributes {
     /// A file that is read-only. Applications can read the file, but cannot write
@@ -224,8 +236,10 @@ impl BitOrAssign for FileAttributes {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CreateOptions(pub u32);
+
+impl_debug_flags!(CreateOptions);
 
 impl CreateOptions {
     pub const fn file_directory_file() -> Self {
@@ -259,8 +273,10 @@ impl BitOrAssign for CreateOptions {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FileAccessRights(pub FILE_ACCESS_RIGHTS);
+
+impl_debug_flags!(FileAccessRights);
 
 impl FileAccessRights {
     /// For a file object, the right to read the corresponding file data. For a
@@ -429,8 +445,10 @@ impl BitOrAssign for FileAccessRights {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CleanupFlags(pub i32);
+
+impl_debug_flags!(CleanupFlags);
 
 impl CleanupFlags {
     pub const fn delete() -> Self {
@@ -476,8 +494,10 @@ impl BitOrAssign for CleanupFlags {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FileShareMode(pub FILE_SHARE_MODE);
+
+impl_debug_flags!(FileShareMode);
 
 impl FileShareMode {
     pub const fn none() -> Self {

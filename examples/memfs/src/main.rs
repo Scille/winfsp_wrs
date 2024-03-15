@@ -65,7 +65,7 @@ impl FolderObj {
 
         info.set_file_attributes(attributes).set_time(now);
 
-        assert!(attributes.is(FileAttributes::directory()));
+        assert!(attributes.is(FileAttributes::DIRECTORY));
 
         Self {
             path,
@@ -88,10 +88,10 @@ impl FileObj {
         let mut info = FileInfo::default();
 
         info.set_allocation_size(allocation_size)
-            .set_file_attributes(attributes | FileAttributes::archive())
+            .set_file_attributes(attributes | FileAttributes::ARCHIVE)
             .set_time(now);
 
-        assert!(!attributes.is(FileAttributes::directory()));
+        assert!(!attributes.is(FileAttributes::DIRECTORY));
 
         Self {
             path,
@@ -209,7 +209,7 @@ impl MemFs {
 
         let entry = Obj::Folder(FolderObj::new(
             root_path.clone(),
-            FileAttributes::directory(),
+            FileAttributes::DIRECTORY,
             SecurityDescriptor::from_wstr(u16cstr!(
                 "O:BAG:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;WD)"
             ))
@@ -302,7 +302,7 @@ impl FileSystemContext for MemFs {
         let file_obj = Arc::new(Mutex::new(
             if create_file_info
                 .create_options
-                .is(CreateOptions::file_directory_file())
+                .is(CreateOptions::FILE_DIRECTORY_FILE)
             {
                 Obj::new_folder(
                     file_name.clone(),
@@ -352,7 +352,7 @@ impl FileSystemContext for MemFs {
 
         if let Obj::File(file_obj) = file_context.lock().unwrap().deref_mut() {
             // File attributes
-            file_attributes |= FileAttributes::archive();
+            file_attributes |= FileAttributes::ARCHIVE;
             if replace_file_attributes {
                 file_obj.info.set_file_attributes(file_attributes);
             } else {
@@ -390,35 +390,35 @@ impl FileSystemContext for MemFs {
 
         if let Obj::File(file_obj) = file_context.lock().unwrap().deref_mut() {
             // Resize
-            if flags.is(CleanupFlags::set_allocation_size()) {
+            if flags.is(CleanupFlags::SET_ALLOCATION_SIZE) {
                 file_obj.adapt_allocation_size(file_obj.info.file_size() as usize)
             }
 
             // Set archive bit
-            if flags.is(CleanupFlags::set_archive_bit()) {
+            if flags.is(CleanupFlags::SET_ARCHIVE_BIT) {
                 file_obj.info.set_file_attributes(
-                    FileAttributes::archive() | file_obj.info.file_attributes(),
+                    FileAttributes::ARCHIVE | file_obj.info.file_attributes(),
                 );
             }
 
             let now = filetime_now();
             // Set last access time
-            if flags.is(CleanupFlags::set_last_access_time()) {
+            if flags.is(CleanupFlags::SET_LAST_ACCESS_TIME) {
                 file_obj.info.set_last_access_time(now);
             }
 
-            if flags.is(CleanupFlags::set_last_write_time()) {
+            if flags.is(CleanupFlags::SET_LAST_WRITE_TIME) {
                 file_obj.info.set_last_write_time(now);
             }
 
-            if flags.is(CleanupFlags::set_change_time()) {
+            if flags.is(CleanupFlags::SET_CHANGE_TIME) {
                 file_obj.info.set_change_time(now);
             }
         }
 
         // Delete
         if let Some(file_name) = file_name {
-            assert!(flags.is(CleanupFlags::delete()));
+            assert!(flags.is(CleanupFlags::DELETE));
             let file_name = PathBuf::from(file_name.to_os_string());
 
             // check for non-empty directory
@@ -502,7 +502,7 @@ impl FileSystemContext for MemFs {
 
         match file_context.lock().unwrap().deref_mut() {
             Obj::File(file_obj) => {
-                if !file_attributes.is(FileAttributes::invalid()) {
+                if !file_attributes.is(FileAttributes::INVALID) {
                     file_obj.info.set_file_attributes(file_attributes);
                 }
                 if creation_time != 0 {
@@ -519,7 +519,7 @@ impl FileSystemContext for MemFs {
                 }
             }
             Obj::Folder(folder_obj) => {
-                if !file_attributes.is(FileAttributes::invalid()) {
+                if !file_attributes.is(FileAttributes::INVALID) {
                     folder_obj.info.set_file_attributes(file_attributes);
                 }
                 if creation_time != 0 {

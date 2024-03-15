@@ -27,7 +27,7 @@ impl MemFs {
         let now = filetime_now();
         let mut info = FileInfo::default();
 
-        info.set_file_attributes(FileAttributes::directory())
+        info.set_file_attributes(FileAttributes::DIRECTORY)
             .set_time(now);
 
         Self {

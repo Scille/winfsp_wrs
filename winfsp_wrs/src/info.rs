@@ -218,6 +218,7 @@ impl DirInfo {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum WriteMode {
     Normal,
     Constrained,

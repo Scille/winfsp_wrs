@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use winfsp_wrs::{
-    filetime_now, u16cstr, u16str, CreateOptions, FileAccessRights, FileAttributes, FileInfo,
-    FileSystem, FileSystemContext, PSecurityDescriptor, Params, SecurityDescriptor, U16CStr,
-    U16CString, U16Str, VolumeInfo, VolumeParams, NTSTATUS,
+    filetime_now, u16cstr, u16str, CreateOptions, DirInfo, FileAccessRights, FileAttributes,
+    FileInfo, FileSystem, FileSystemContext, PSecurityDescriptor, Params, SecurityDescriptor,
+    U16CStr, U16Str, VolumeInfo, VolumeParams, NTSTATUS,
 };
 
 #[derive(Debug, Clone)]
@@ -68,8 +68,10 @@ impl FileSystemContext for MemFs {
         _file_name: &U16CStr,
         _create_options: CreateOptions,
         _granted_access: FileAccessRights,
-    ) -> Result<Self::FileContext, NTSTATUS> {
-        Ok(Arc::new(self.file_context.clone()))
+    ) -> Result<(Self::FileContext, FileInfo), NTSTATUS> {
+        let file_context = Arc::new(self.file_context.clone());
+        let file_info = self.file_context.info;
+        Ok((file_context, file_info))
     }
 
     fn get_file_info(&self, _file_context: Self::FileContext) -> Result<FileInfo, NTSTATUS> {
@@ -84,8 +86,9 @@ impl FileSystemContext for MemFs {
         &self,
         _file_context: Self::FileContext,
         _marker: Option<&U16CStr>,
-    ) -> Result<Vec<(U16CString, FileInfo)>, NTSTATUS> {
-        Ok(vec![])
+        _add_dir_info: impl FnMut(DirInfo) -> bool,
+    ) -> Result<(), NTSTATUS> {
+        Ok(())
     }
 }
 

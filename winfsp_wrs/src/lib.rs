@@ -21,7 +21,7 @@ pub use flags::{
     FileShareMode,
 };
 pub use info::{CreateFileInfo, DirInfo, FileInfo, VolumeInfo, WriteMode};
-pub use init::init;
+pub use init::{init, InitError};
 pub use security::{PSecurityDescriptor, SecurityDescriptor};
 
 // Reexport

@@ -205,7 +205,7 @@ pub struct DirInfo {
 }
 
 impl DirInfo {
-    pub(crate) fn new(file_info: FileInfo, file_name: &U16CStr) -> Self {
+    pub fn new(file_info: FileInfo, file_name: &U16CStr) -> Self {
         let mut buf = [0; 255];
         buf[..file_name.len()].copy_from_slice(file_name.as_slice());
 
@@ -216,11 +216,54 @@ impl DirInfo {
             file_name: buf,
         }
     }
+
+    pub fn from_str(file_info: FileInfo, file_name: &str) -> Self {
+        let mut info = Self {
+            size: 0,
+            file_info,
+            _padding: [0; 24],
+            file_name: [0; 255],
+        };
+
+        let mut i = 0;
+        for c in file_name.encode_utf16() {
+            info.file_name[i] = c;
+            i += 1;
+        }
+        info.size =
+            (std::mem::size_of::<FSP_FSCTL_DIR_INFO>() + i * std::mem::size_of::<u16>()) as u16;
+
+        info
+    }
+
+    pub fn from_osstr(file_info: FileInfo, file_name: &std::ffi::OsStr) -> Self {
+        use std::os::windows::ffi::OsStrExt;
+
+        let mut info = Self {
+            size: 0,
+            file_info,
+            _padding: [0; 24],
+            file_name: [0; 255],
+        };
+
+        let mut i = 0;
+        for c in file_name.encode_wide() {
+            info.file_name[i] = c;
+            i += 1;
+        }
+        info.size =
+            (std::mem::size_of::<FSP_FSCTL_DIR_INFO>() + i * std::mem::size_of::<u16>()) as u16;
+
+        info
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum WriteMode {
-    Normal,
-    Constrained,
-    StartEOF,
+    /// Regular write mode: start at the offset and extend the file as much as needed.
+    Normal { offset: u64 },
+    /// The file system must not extend the file (i.e. change the file size).
+    ConstrainedIO { offset: u64 },
+    /// The file system must write to the current end of file.
+    WriteToEOF,
 }

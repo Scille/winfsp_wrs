@@ -2,23 +2,12 @@ use std::ops::{BitOr, BitOrAssign};
 
 use windows_sys::{
     Wdk::Storage::FileSystem::{
-        FILE_DIRECTORY_FILE,
-        FILE_NON_DIRECTORY_FILE,
-        FILE_WRITE_THROUGH,
-        FILE_SEQUENTIAL_ONLY,
-        FILE_RANDOM_ACCESS,
-        FILE_NO_INTERMEDIATE_BUFFERING,
-        FILE_SYNCHRONOUS_IO_ALERT,
-        FILE_SYNCHRONOUS_IO_NONALERT,
-        FILE_CREATE_TREE_CONNECTION,
-        FILE_NO_EA_KNOWLEDGE,
-        FILE_OPEN_REPARSE_POINT,
-        FILE_DELETE_ON_CLOSE,
-        FILE_OPEN_BY_FILE_ID,
-        FILE_OPEN_FOR_BACKUP_INTENT,
-        FILE_RESERVE_OPFILTER,
-        FILE_OPEN_REQUIRING_OPLOCK,
-        FILE_COMPLETE_IF_OPLOCKED,
+        FILE_COMPLETE_IF_OPLOCKED, FILE_CREATE_TREE_CONNECTION, FILE_DELETE_ON_CLOSE,
+        FILE_DIRECTORY_FILE, FILE_NON_DIRECTORY_FILE, FILE_NO_EA_KNOWLEDGE,
+        FILE_NO_INTERMEDIATE_BUFFERING, FILE_OPEN_BY_FILE_ID, FILE_OPEN_FOR_BACKUP_INTENT,
+        FILE_OPEN_REPARSE_POINT, FILE_OPEN_REQUIRING_OPLOCK, FILE_RANDOM_ACCESS,
+        FILE_RESERVE_OPFILTER, FILE_SEQUENTIAL_ONLY, FILE_SYNCHRONOUS_IO_ALERT,
+        FILE_SYNCHRONOUS_IO_NONALERT, FILE_WRITE_THROUGH,
     },
     Win32::Storage::FileSystem::{
         CREATE_ALWAYS, CREATE_NEW, DELETE, FILE_ACCESS_RIGHTS, FILE_ADD_FILE,
@@ -50,7 +39,9 @@ macro_rules! impl_debug_flags {
     ($name:ident) => {
         impl std::fmt::Debug for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.debug_tuple("FileAttributes").field(&format_args!("0x{:X}", self.0)).finish()
+                f.debug_tuple("FileAttributes")
+                    .field(&format_args!("0x{:X}", self.0))
+                    .finish()
             }
         }
     };
@@ -242,7 +233,8 @@ impl CreateOptions {
 
     /// The file cannot be cached or buffered in a driver's internal buffers. This
     /// flag is incompatible with the DesiredAccess FILE_APPEND_DATA flag.
-    pub const FILE_NO_INTERMEDIATE_BUFFERING: CreateOptions = CreateOptions(FILE_NO_INTERMEDIATE_BUFFERING);
+    pub const FILE_NO_INTERMEDIATE_BUFFERING: CreateOptions =
+        CreateOptions(FILE_NO_INTERMEDIATE_BUFFERING);
 
     /// All operations on the file are performed synchronously. Any wait on behalf
     /// of the caller is subject to premature termination from alerts. This flag
@@ -254,11 +246,13 @@ impl CreateOptions {
     /// to synchronize I/O queuing and completion are not subject to alerts. This
     /// flag also causes the I/O system to maintain the file position context. If
     /// this flag is set, the DesiredAccess SYNCHRONIZE flag also must be set.
-    pub const FILE_SYNCHRONOUS_IO_NONALERT: CreateOptions = CreateOptions(FILE_SYNCHRONOUS_IO_NONALERT);
+    pub const FILE_SYNCHRONOUS_IO_NONALERT: CreateOptions =
+        CreateOptions(FILE_SYNCHRONOUS_IO_NONALERT);
 
     /// Create a tree connection for this file in order to open it over the network.
     /// This flag is not used by device and intermediate drivers.
-    pub const FILE_CREATE_TREE_CONNECTION: CreateOptions = CreateOptions(FILE_CREATE_TREE_CONNECTION);
+    pub const FILE_CREATE_TREE_CONNECTION: CreateOptions =
+        CreateOptions(FILE_CREATE_TREE_CONNECTION);
 
     /// If the extended attributes on an existing file being opened indicate that
     /// the caller must understand EAs to properly interpret the file, fail this
@@ -286,7 +280,8 @@ impl CreateOptions {
     /// check for certain access rights and grant the caller the appropriate access
     /// to the file before checking the DesiredAccess parameter against the file's
     /// security descriptor. This flag not used by device and intermediate drivers.
-    pub const FILE_OPEN_FOR_BACKUP_INTENT: CreateOptions = CreateOptions(FILE_OPEN_FOR_BACKUP_INTENT);
+    pub const FILE_OPEN_FOR_BACKUP_INTENT: CreateOptions =
+        CreateOptions(FILE_OPEN_FOR_BACKUP_INTENT);
 
     /// This flag allows an application to request a filter opportunistic lock
     /// (oplock) to prevent other applications from getting share violations. If
@@ -491,7 +486,7 @@ impl_debug_flags!(FileShareMode);
 // Documentation taken from https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
 impl FileShareMode {
     /// Prevents other processes from opening a file or device if they request delete,
-    /// read, or write access. 
+    /// read, or write access.
     pub const NONE: Self = Self(FILE_SHARE_NONE);
 
     /// Enables subsequent open operations on a file or device to request delete access.

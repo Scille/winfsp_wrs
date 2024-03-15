@@ -1,12 +1,27 @@
 use std::path::PathBuf;
 use widestring::{U16CStr, U16CString};
-use windows_sys::{
-    w,
-    Win32::Foundation::{ERROR_DELAY_LOAD_FAILED, ERROR_FILE_NOT_FOUND},
-    Win32::System::LibraryLoader::LoadLibraryW,
-};
+use windows_sys::{w, Win32::System::LibraryLoader::LoadLibraryW};
 
-fn get_lplibfilename() -> Result<U16CString, u32> {
+#[derive(Debug)]
+pub enum InitError {
+    WinFSPNotFound,
+    CannotLoadDLL { dll_path: U16CString },
+}
+
+impl std::error::Error for InitError {}
+
+impl std::fmt::Display for InitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InitError::WinFSPNotFound => write!(f, "Cannot find WinFSP install directory."),
+            InitError::CannotLoadDLL { dll_path } => {
+                write!(f, "Cannot load WinFSP DLL {}.", dll_path.to_string_lossy())
+            }
+        }
+    }
+}
+
+fn get_lplibfilename() -> Result<U16CString, InitError> {
     use windows_sys::Win32::Foundation::MAX_PATH;
     use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
     let mut path = [0u16; MAX_PATH as usize];
@@ -25,7 +40,7 @@ fn get_lplibfilename() -> Result<U16CString, u32> {
     };
 
     if winfsp_install != 0 {
-        return Err(ERROR_FILE_NOT_FOUND);
+        return Err(InitError::WinFSPNotFound);
     }
 
     let path = U16CStr::from_slice(&path[0..(size as usize) / std::mem::size_of::<u16>()])
@@ -54,12 +69,12 @@ fn get_lplibfilename() -> Result<U16CString, u32> {
 /// delayload, which is needed because `winfsp_wrs` depends on `WinFSP's dll`
 /// which is not in Windows path or at the same location of your binary.
 /// # Note: This funcion is idempotent, hence calling it multiple times is safe.
-pub fn init() -> Result<(), u32> {
-    unsafe {
-        if LoadLibraryW(get_lplibfilename()?.as_ptr().cast_mut()) == 0 {
-            Err(ERROR_DELAY_LOAD_FAILED)
-        } else {
-            Ok(())
-        }
+pub fn init() -> Result<(), InitError> {
+    let dll_path = get_lplibfilename()?;
+    let outcome = unsafe { LoadLibraryW(dll_path.as_ptr().cast_mut()) };
+    if outcome != 0 {
+        Ok(())
+    } else {
+        Err(InitError::CannotLoadDLL { dll_path })
     }
 }

@@ -278,7 +278,7 @@ impl FileSystemContext for MemFs {
         }
     }
 
-    fn create(
+    fn create_ex(
         &self,
         file_name: &U16CStr,
         create_file_info: CreateFileInfo,
@@ -338,7 +338,7 @@ impl FileSystemContext for MemFs {
         }
     }
 
-    fn overwrite(
+    fn overwrite_ex(
         &self,
         file_context: Self::FileContext,
         mut file_attributes: FileAttributes,

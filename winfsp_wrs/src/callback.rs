@@ -107,7 +107,7 @@ pub trait FileSystemContext {
     ) -> Result<(FileAttributes, PSecurityDescriptor, bool), NTSTATUS>;
 
     /// Create new file or directory.
-    fn create(
+    fn create_ex(
         &self,
         _file_name: &U16CStr,
         _create_file_info: CreateFileInfo,
@@ -127,7 +127,7 @@ pub trait FileSystemContext {
     ) -> Result<Self::FileContext, NTSTATUS>;
 
     /// Overwrite a file.
-    fn overwrite(
+    fn overwrite_ex(
         &self,
         _file_context: Self::FileContext,
         _file_attributes: FileAttributes,
@@ -1241,7 +1241,7 @@ impl Interface {
         let sd = SecurityDescriptor::from_ptr(security_descriptor);
         let buffer = std::slice::from_raw_parts(extra_buffer.cast(), extra_length as usize);
 
-        match C::create(
+        match C::create_ex(
             fs,
             file_name,
             CreateFileInfo {
@@ -1289,7 +1289,7 @@ impl Interface {
         let fctx = C::FileContext::access(file_context);
         let buffer = std::slice::from_raw_parts(ea.cast(), ea_length as usize);
 
-        match C::overwrite(
+        match C::overwrite_ex(
             fs,
             fctx,
             FileAttributes(file_attributes),

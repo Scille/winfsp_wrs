@@ -331,7 +331,10 @@ pub struct FileAccessRights(pub FILE_ACCESS_RIGHTS);
 
 impl_debug_flags!(FileAccessRights);
 
-// Documentation taken from https://learn.microsoft.com/en-us/windows/win32/fileio/file-access-rights-constants
+// Documentation taken from:
+// - https://learn.microsoft.com/en-us/windows/win32/fileio/file-access-rights-constants
+// - https://learn.microsoft.com/en-us/windows/win32/secauthz/standard-access-rights
+// - https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights
 impl FileAccessRights {
     /// For a file object, the right to read the corresponding file data. For a
     /// directory object, the right to read the corresponding directory data.
@@ -386,29 +389,38 @@ impl FileAccessRights {
     /// The right to write file attributes.
     pub const FILE_WRITE_ATTRIBUTES: Self = Self(FILE_WRITE_ATTRIBUTES);
 
+    /// The right to delete the object.
     pub const DELETE: Self = Self(DELETE);
 
+    /// The right to read the information in the object's security descriptor, not
+    /// including the information in the system access control list (SACL).
     pub const READ_CONTROL: Self = Self(READ_CONTROL);
 
+    /// The right to modify the discretionary access control list (DACL) in the
+    /// object's security descriptor.
     pub const WRITE_DAC: Self = Self(WRITE_DAC);
 
+    /// The right to change the owner in the object's security descriptor.
     pub const WRITE_OWNER: Self = Self(WRITE_OWNER);
 
+    /// The right to use the object for synchronization. This enables a thread to wait
+    /// until the object is in the signaled state. Some object types do not support
+    /// this access right.
     pub const SYNCHRONIZE: Self = Self(SYNCHRONIZE);
 
+    /// Combines DELETE, READ_CONTROL, WRITE_DAC, and WRITE_OWNER access.
     pub const STANDARD_RIGHTS_REQUIRED: Self = Self(STANDARD_RIGHTS_REQUIRED);
 
-    /// Includes READ_CONTROL, which is the right to read the information in the
-    /// file or directory object's security descriptor. This does not include the
-    /// information in the SACL.
+    /// Currently defined to equal READ_CONTROL.
     pub const STANDARD_RIGHTS_READ: Self = Self(STANDARD_RIGHTS_READ);
 
-    /// Same as STANDARD_RIGHTS_READ.
+    /// Currently defined to equal READ_CONTROL.
     pub const STANDARD_RIGHTS_WRITE: Self = Self(STANDARD_RIGHTS_WRITE);
 
     /// Same as STANDARD_RIGHTS_READ.
     pub const STANDARD_RIGHTS_EXECUTE: Self = Self(STANDARD_RIGHTS_EXECUTE);
 
+    /// Combines DELETE, READ_CONTROL, WRITE_DAC, WRITE_OWNER, and SYNCHRONIZE access.
     pub const STANDARD_RIGHTS_ALL: Self = Self(STANDARD_RIGHTS_ALL);
 
     pub const SPECIFIC_RIGHTS_ALL: Self = Self(SPECIFIC_RIGHTS_ALL);
@@ -416,10 +428,13 @@ impl FileAccessRights {
     /// All possible access rights for a file.
     pub const FILE_ALL_ACCESS: Self = Self(FILE_ALL_ACCESS);
 
+    /// FILE_READ_ATTRIBUTES | FILE_READ_DATA | FILE_READ_EA | STANDARD_RIGHTS_READ | SYNCHRONIZE
     pub const FILE_GENERIC_READ: Self = Self(FILE_GENERIC_READ);
 
+    /// FILE_APPEND_DATA | FILE_WRITE_ATTRIBUTES | FILE_WRITE_DATA | FILE_WRITE_EA | STANDARD_RIGHTS_WRITE | SYNCHRONIZE
     pub const FILE_GENERIC_WRITE: Self = Self(FILE_GENERIC_WRITE);
 
+    /// FILE_EXECUTE | FILE_READ_ATTRIBUTES | STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE
     pub const FILE_GENERIC_EXECUTE: Self = Self(FILE_GENERIC_EXECUTE);
 
     pub const fn is(self, rhs: Self) -> bool {

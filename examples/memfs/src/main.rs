@@ -13,6 +13,11 @@ use winfsp_wrs::{
     STATUS_OBJECT_NAME_NOT_FOUND,
 };
 
+macro_rules! debug {
+    (target: $target:expr, $($arg:tt)+) => { println!($target, $($arg)+) };
+    ($($arg:tt)+) => { println!($($arg)+) };
+}
+
 enum Obj {
     Folder(FolderObj),
     File(FileObj),
@@ -232,16 +237,28 @@ impl MemFs {
             root_path,
         }
     }
+
+
+    fn get_file_info_from_obj(&self, file_context: &Obj) -> Result<FileInfo, NTSTATUS> {
+        match file_context {
+            Obj::File(file_obj) => Ok(file_obj.info),
+            Obj::Folder(folder_obj) => Ok(folder_obj.info),
+        }
+    }
 }
 
 impl FileSystemContext for MemFs {
     type FileContext = Arc<Mutex<Obj>>;
 
     fn get_volume_info(&self) -> Result<VolumeInfo, NTSTATUS> {
+        debug!("get_volume_info()");
+
         Ok(self.volume_info.lock().unwrap().clone())
     }
 
     fn set_volume_label(&self, volume_label: &U16CStr) -> Result<VolumeInfo, NTSTATUS> {
+        debug!("set_volume_label(volume_label: {:?})", volume_label);
+
         let mut guard = self.volume_info.lock().unwrap();
 
         guard
@@ -256,6 +273,8 @@ impl FileSystemContext for MemFs {
         file_name: &U16CStr,
         _find_reparse_point: impl Fn() -> Option<FileAttributes>,
     ) -> Result<(FileAttributes, PSecurityDescriptor, bool), NTSTATUS> {
+        debug!("get_security_by_name(file_name: {:?})", file_name);
+
         let entries = self.entries.lock().unwrap();
 
         let file_name = PathBuf::from(file_name.to_os_string());
@@ -286,6 +305,11 @@ impl FileSystemContext for MemFs {
         _buffer: &[u8],
         _extra_buffer_is_reparse_point: bool,
     ) -> Result<(Self::FileContext, FileInfo), NTSTATUS> {
+        debug!(
+            "[WinFSP] create(file_name: {:?}, create_file_info: {:?}, security_descriptor: {:?})",
+            file_name, create_file_info, security_descriptor
+        );
+
         if self.read_only {
             return Err(STATUS_MEDIA_WRITE_PROTECTED);
         }
@@ -299,8 +323,7 @@ impl FileSystemContext for MemFs {
             return Err(STATUS_OBJECT_NAME_COLLISION);
         }
 
-        let file_context = Arc::new(Mutex::new(
-            if create_file_info
+        let obj = if create_file_info
                 .create_options
                 .is(CreateOptions::FILE_DIRECTORY_FILE)
             {
@@ -316,12 +339,11 @@ impl FileSystemContext for MemFs {
                     security_descriptor,
                     create_file_info.allocation_size,
                 )
-            },
-        ));
+            };
 
+        let file_info = self.get_file_info_from_obj(&obj)?;
+        let file_context = Arc::new(Mutex::new(obj));
         entries.insert(file_name, file_context.clone());
-
-        let file_info = self.get_file_info(file_context.clone())?;
 
         Ok((file_context, file_info))
     }
@@ -329,15 +351,20 @@ impl FileSystemContext for MemFs {
     fn open(
         &self,
         file_name: &U16CStr,
-        _create_options: CreateOptions,
-        _granted_access: FileAccessRights,
+        create_options: CreateOptions,
+        granted_access: FileAccessRights,
     ) -> Result<(Self::FileContext, FileInfo), NTSTATUS> {
+        debug!(
+            "[WinFSP] open(file_name: {:?}, create_option: {:x?}, granted_access: {:x?})",
+            file_name, create_options, granted_access
+        );
+
         let file_name = PathBuf::from(file_name.to_os_string());
 
         match self.entries.lock().unwrap().get(&file_name) {
             Some(entry) => {
                 let file_context = entry.clone();
-                let file_info = self.get_file_info(file_context.clone())?;
+                let file_info = self.get_file_info_from_obj(&file_context.lock().unwrap())?;
                 Ok((file_context, file_info))
             }
             None => Err(STATUS_OBJECT_NAME_NOT_FOUND),
@@ -352,11 +379,17 @@ impl FileSystemContext for MemFs {
         allocation_size: u64,
         _buffer: &[u8],
     ) -> Result<FileInfo, NTSTATUS> {
+        let mut fc = file_context.lock().unwrap();
+        debug!(
+            "[WinFSP] overwrite(file_context: {:?}, file_attributes: {:?}, replace_file_attributes: {:?}, allocation_size: {:?})",
+            fc, file_attributes, replace_file_attributes, allocation_size
+        );
+
         if self.read_only {
             return Err(STATUS_MEDIA_WRITE_PROTECTED);
         }
 
-        if let Obj::File(file_obj) = file_context.lock().unwrap().deref_mut() {
+        if let Obj::File(file_obj) = fc.deref_mut() {
             // File attributes
             file_attributes |= FileAttributes::ARCHIVE;
             if replace_file_attributes {
@@ -379,7 +412,7 @@ impl FileSystemContext for MemFs {
             unreachable!()
         }
 
-        self.get_file_info(file_context)
+        self.get_file_info_from_obj(&fc)
     }
 
     fn cleanup(
@@ -388,13 +421,19 @@ impl FileSystemContext for MemFs {
         file_name: Option<&U16CStr>,
         flags: CleanupFlags,
     ) {
+        let mut fc = file_context.lock().unwrap();
+        debug!(
+            "[WinFSP] cleanup(file_context: {:?}, file_name: {:?}, flags: {:x?})",
+            fc, file_name, flags
+        );
+
         if self.read_only {
             return;
         }
 
         let mut entries = self.entries.lock().unwrap();
 
-        if let Obj::File(file_obj) = file_context.lock().unwrap().deref_mut() {
+        if let Obj::File(file_obj) = fc.deref_mut() {
             // Resize
             if flags.is(CleanupFlags::SET_ALLOCATION_SIZE) {
                 file_obj.adapt_allocation_size(file_obj.info.file_size() as usize)
@@ -445,7 +484,15 @@ impl FileSystemContext for MemFs {
         buffer: &mut [u8],
         offset: u64,
     ) -> Result<usize, NTSTATUS> {
-        if let Obj::File(file_obj) = file_context.lock().unwrap().deref() {
+        let fc = file_context.lock().unwrap();
+        debug!(
+            "[WinFSP] read(file_context: {:?}, buffer_size: {}, offset: {:?})",
+            fc,
+            buffer.len(),
+            offset
+        );
+
+        if let Obj::File(file_obj) = fc.deref() {
             if offset >= file_obj.info.file_size() {
                 return Err(STATUS_END_OF_FILE);
             }
@@ -463,11 +510,17 @@ impl FileSystemContext for MemFs {
         buffer: &[u8],
         mode: WriteMode,
     ) -> Result<(usize, FileInfo), NTSTATUS> {
+        let mut fc = file_context.lock().unwrap();
+        debug!(
+            "[WinFSP] write(file_context: {:?}, buffer: {:?}, mode: {:?})",
+            fc, buffer, mode,
+        );
+
         if self.read_only {
             return Err(STATUS_MEDIA_WRITE_PROTECTED);
         }
 
-        let written = if let Obj::File(file_obj) = file_context.lock().unwrap().deref_mut() {
+        let written = if let Obj::File(file_obj) = fc.deref_mut() {
             match mode {
                 WriteMode::Normal { offset } => file_obj.write(buffer, offset as usize),
                 WriteMode::ConstrainedIO { offset } => {
@@ -482,15 +535,21 @@ impl FileSystemContext for MemFs {
             unreachable!()
         };
 
-        Ok((written, self.get_file_info(file_context)?))
+        Ok((written, self.get_file_info_from_obj(&fc)?))
     }
 
     fn flush(&self, file_context: Self::FileContext) -> Result<FileInfo, NTSTATUS> {
-        self.get_file_info(file_context)
+        let fc = file_context.lock().unwrap();
+        debug!("[WinFSP] flush(file_context: {:?})", fc);
+
+        self.get_file_info_from_obj(&fc)
     }
 
     fn get_file_info(&self, file_context: Self::FileContext) -> Result<FileInfo, NTSTATUS> {
-        match file_context.lock().unwrap().deref() {
+        let fc = file_context.lock().unwrap();
+        debug!("[WinFSP] get_file_info(file_context: {:?})", fc);
+
+        match &*fc {
             Obj::File(file_obj) => Ok(file_obj.info),
             Obj::Folder(folder_obj) => Ok(folder_obj.info),
         }
@@ -505,11 +564,17 @@ impl FileSystemContext for MemFs {
         last_write_time: u64,
         change_time: u64,
     ) -> Result<FileInfo, NTSTATUS> {
+        let mut fc = file_context.lock().unwrap();
+        debug!(
+            "[WinFSP] set_basic_info(file_context: {:?}, file_attributes: {:?}, creation_time: {:?}, last_access_time: {:?}, last_write_time: {:?}, change_time: {:?})",
+            fc, file_attributes, creation_time, last_access_time, last_write_time, change_time
+        );
+
         if self.read_only {
             return Err(STATUS_MEDIA_WRITE_PROTECTED);
         }
 
-        match file_context.lock().unwrap().deref_mut() {
+        match fc.deref_mut() {
             Obj::File(file_obj) => {
                 if !file_attributes.is(FileAttributes::INVALID) {
                     file_obj.info.set_file_attributes(file_attributes);
@@ -546,7 +611,7 @@ impl FileSystemContext for MemFs {
             }
         }
 
-        self.get_file_info(file_context)
+        self.get_file_info_from_obj(&fc)
     }
 
     fn set_file_size(
@@ -555,11 +620,17 @@ impl FileSystemContext for MemFs {
         new_size: u64,
         set_allocation_size: bool,
     ) -> Result<FileInfo, NTSTATUS> {
+        let mut fc = file_context.lock().unwrap();
+        debug!(
+            "[WinFSP] set_file_size(file_context: {:?}, new_size: {}, set_allocation_size: {})",
+            fc, new_size, set_allocation_size
+        );
+
         if self.read_only {
             return Err(STATUS_MEDIA_WRITE_PROTECTED);
         }
 
-        match file_context.lock().unwrap().deref_mut() {
+        match fc.deref_mut() {
             Obj::File(file_obj) => {
                 if set_allocation_size {
                     file_obj.set_allocation_size(new_size as usize)
@@ -572,16 +643,21 @@ impl FileSystemContext for MemFs {
             }
         }
 
-        self.get_file_info(file_context)
+        self.get_file_info_from_obj(&fc)
     }
 
     fn rename(
         &self,
-        _file_context: Self::FileContext,
+        file_context: Self::FileContext,
         file_name: &U16CStr,
         new_file_name: &U16CStr,
         replace_if_exists: bool,
     ) -> Result<(), NTSTATUS> {
+        {
+            let fc = file_context.lock().unwrap();
+            debug!("[WinFSP] rename(file_context: {:?}, file_name: {:?}, new_file_name: {:?}, replace_if_exists: {:?})", fc, file_name, new_file_name, replace_if_exists);
+        }
+
         if self.read_only {
             return Err(STATUS_MEDIA_WRITE_PROTECTED);
         }
@@ -626,7 +702,10 @@ impl FileSystemContext for MemFs {
         &self,
         file_context: Self::FileContext,
     ) -> Result<PSecurityDescriptor, NTSTATUS> {
-        match file_context.lock().unwrap().deref() {
+        let fc = file_context.lock().unwrap();
+        debug!("[WinFSP] get_security(file_context: {:?})", fc);
+
+        match &*fc {
             Obj::File(file_obj) => Ok(file_obj.security_descriptor.as_ptr()),
             Obj::Folder(folder_obj) => Ok(folder_obj.security_descriptor.as_ptr()),
         }
@@ -638,11 +717,14 @@ impl FileSystemContext for MemFs {
         security_information: u32,
         modification_descriptor: PSecurityDescriptor,
     ) -> Result<(), NTSTATUS> {
+        let mut fc = file_context.lock().unwrap();
+        debug!("[WinFSP] set_security(file_context: {:?}, security_information: {:?}, modification_descriptor: {:?})", fc, security_information, modification_descriptor);
+
         if self.read_only {
             return Err(STATUS_MEDIA_WRITE_PROTECTED);
         }
 
-        match file_context.lock().unwrap().deref_mut() {
+        match fc.deref_mut() {
             Obj::File(file_obj) => {
                 let new_descriptor = file_obj
                     .security_descriptor
@@ -666,9 +748,15 @@ impl FileSystemContext for MemFs {
         marker: Option<&U16CStr>,
         mut add_dir_info: impl FnMut(DirInfo) -> bool,
     ) -> Result<(), NTSTATUS> {
+        let fc = file_context.lock().unwrap();
+        debug!(
+            "[WinFSP] read_directory(file_context: {:?}, marker: {:?})",
+            fc, marker
+        );
+
         let entries = self.entries.lock().unwrap();
 
-        match file_context.lock().unwrap().deref() {
+        match &*fc {
             Obj::File(_) => Err(STATUS_NOT_A_DIRECTORY),
             Obj::Folder(folder_obj) => {
                 let mut res_entries = vec![];
@@ -721,10 +809,16 @@ impl FileSystemContext for MemFs {
 
     fn set_delete(
         &self,
-        _file_context: Self::FileContext,
+        file_context: Self::FileContext,
         file_name: &U16CStr,
-        _delete_file: bool,
+        delete_file: bool,
     ) -> Result<(), NTSTATUS> {
+        let fc = file_context.lock().unwrap();
+        debug!(
+            "[WinFSP] set_delete(file_context: {:?}, file_name: {:?}, delete_file: {:?})",
+            fc, file_name, delete_file
+        );
+
         if self.read_only {
             return Err(STATUS_MEDIA_WRITE_PROTECTED);
         }

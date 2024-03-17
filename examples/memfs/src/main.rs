@@ -250,6 +250,8 @@ impl MemFs {
 impl FileSystemContext for MemFs {
     type FileContext = Arc<Mutex<Obj>>;
 
+    const SET_DELETE_DEFINED: bool = true;
+
     fn get_volume_info(&self) -> Result<VolumeInfo, NTSTATUS> {
         debug!("get_volume_info()");
 

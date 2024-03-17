@@ -80,6 +80,10 @@ impl FileContextKind for usize {
 pub trait FileSystemContext {
     type FileContext: FileContextKind;
 
+    /// `SetDelete` takes precedence over `CanDelete` if both are defined in `FSP_FILE_SYSTEM_INTERFACE`.
+    /// If this boolean is not set, `FSP_FILE_SYSTEM_INTERFACE`'s `SetDelete` function will not be set.
+    const SET_DELETE_DEFINED: bool = false;
+
     /// Get volume information.
     fn get_volume_info(&self) -> Result<VolumeInfo, NTSTATUS>;
 
@@ -1392,7 +1396,7 @@ impl Interface {
     }
 
     pub(crate) fn interface<Ctx: FileSystemContext>() -> FSP_FILE_SYSTEM_INTERFACE {
-        FSP_FILE_SYSTEM_INTERFACE {
+        let mut fsp_interface = FSP_FILE_SYSTEM_INTERFACE {
             CanDelete: Some(Self::can_delete_ext::<Ctx>),
             Cleanup: Some(Self::cleanup_ext::<Ctx>),
             Close: Some(Self::close_ext::<Ctx>),
@@ -1416,7 +1420,7 @@ impl Interface {
             Rename: Some(Self::rename_ext::<Ctx>),
             ResolveReparsePoints: Some(Self::resolve_reparse_points_ext::<Ctx>),
             SetBasicInfo: Some(Self::set_basic_info_ext::<Ctx>),
-            SetDelete: Some(Self::set_delete_ext::<Ctx>),
+            SetDelete: None,
             SetEa: Some(Self::set_ea_ext::<Ctx>),
             SetFileSize: Some(Self::set_file_size_ext::<Ctx>),
             SetReparsePoint: Some(Self::set_reparse_point_ext::<Ctx>),
@@ -1424,6 +1428,10 @@ impl Interface {
             SetVolumeLabelW: Some(Self::set_volume_label_w_ext::<Ctx>),
             Write: Some(Self::write_ext::<Ctx>),
             ..Default::default()
+        };
+        if Ctx::SET_DELETE_DEFINED {
+            fsp_interface.SetDelete = Some(Self::set_delete_ext::<Ctx>);
         }
+        fsp_interface
     }
 }

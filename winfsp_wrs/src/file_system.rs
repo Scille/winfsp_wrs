@@ -324,6 +324,11 @@ pub struct FileSystem<Ctx: FileSystemContext> {
     phantom: PhantomData<Ctx>,
 }
 
+// SAFETY: FSP_FILE_SYSTEM contains `*mut c_void` pointers that cannot be send between threads
+// by default. However this structure is only used by WinFSP (and not exposed to the user) which
+// is deep in C++ land where Rust safety rules do not apply.
+unsafe impl<Ctx: FileSystemContext> Send for FileSystem<Ctx> {}
+
 impl<Ctx: FileSystemContext> FileSystem<Ctx> {
     pub fn volume_params(&self) -> &VolumeParams {
         &self.params.volume_params

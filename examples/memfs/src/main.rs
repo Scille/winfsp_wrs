@@ -238,7 +238,6 @@ impl MemFs {
         }
     }
 
-
     fn get_file_info_from_obj(&self, file_context: &Obj) -> Result<FileInfo, NTSTATUS> {
         match file_context {
             Obj::File(file_obj) => Ok(file_obj.info),
@@ -326,22 +325,22 @@ impl FileSystemContext for MemFs {
         }
 
         let obj = if create_file_info
-                .create_options
-                .is(CreateOptions::FILE_DIRECTORY_FILE)
-            {
-                Obj::new_folder(
-                    file_name.clone(),
-                    create_file_info.file_attributes,
-                    security_descriptor,
-                )
-            } else {
-                Obj::new_file(
-                    file_name.clone(),
-                    create_file_info.file_attributes,
-                    security_descriptor,
-                    create_file_info.allocation_size,
-                )
-            };
+            .create_options
+            .is(CreateOptions::FILE_DIRECTORY_FILE)
+        {
+            Obj::new_folder(
+                file_name.clone(),
+                create_file_info.file_attributes,
+                security_descriptor,
+            )
+        } else {
+            Obj::new_file(
+                file_name.clone(),
+                create_file_info.file_attributes,
+                security_descriptor,
+                create_file_info.allocation_size,
+            )
+        };
 
         let file_info = self.get_file_info_from_obj(&obj)?;
         let file_context = Arc::new(Mutex::new(obj));

@@ -1,5 +1,4 @@
 mod callback;
-pub mod ext;
 mod file_system;
 mod filetime;
 mod flags;

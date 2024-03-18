@@ -1,3 +1,3 @@
 fn main() {
-    winfsp_build::build();
+    winfsp_wrs_build::build();
 }

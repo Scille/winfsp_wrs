@@ -1,9 +1,7 @@
 use widestring::{U16CStr, U16Str};
+use winfsp_wrs_sys::{FSP_FSCTL_DIR_INFO, FSP_FSCTL_FILE_INFO, FSP_FSCTL_VOLUME_INFO};
 
-use crate::{
-    ext::{FSP_FSCTL_DIR_INFO, FSP_FSCTL_FILE_INFO, FSP_FSCTL_VOLUME_INFO},
-    CreateOptions, FileAccessRights, FileAttributes,
-};
+use crate::{CreateOptions, FileAccessRights, FileAttributes};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct FileInfo(pub(crate) FSP_FSCTL_FILE_INFO);

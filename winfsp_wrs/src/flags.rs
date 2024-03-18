@@ -1,5 +1,4 @@
 use std::ops::{BitOr, BitOrAssign};
-
 use windows_sys::{
     Wdk::Storage::FileSystem::{
         FILE_COMPLETE_IF_OPLOCKED, FILE_CREATE_TREE_CONNECTION, FILE_DELETE_ON_CLOSE,
@@ -29,8 +28,7 @@ use windows_sys::{
         STANDARD_RIGHTS_WRITE, SYNCHRONIZE, TRUNCATE_EXISTING, WRITE_DAC, WRITE_OWNER,
     },
 };
-
-use crate::ext::{
+use winfsp_wrs_sys::{
     FspCleanupDelete, FspCleanupSetAllocationSize, FspCleanupSetArchiveBit,
     FspCleanupSetChangeTime, FspCleanupSetLastAccessTime, FspCleanupSetLastWriteTime,
 };

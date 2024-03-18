@@ -9,12 +9,12 @@ use winfsp_wrs::{u16str, VolumeInfo};
 #[test]
 fn winfsp_tests() {
     let mut fs = Command::new("cargo")
-        .args(["run", "--bin", "memfs", "--", "Z:"])
+        .args(["run", "--bin", "memfs", "--", "K:"])
         .stdout(Stdio::null())
         .spawn()
         .unwrap();
 
-    let path = Path::new("Z:");
+    let path = Path::new("K:");
 
     while !path.exists() {
         std::thread::sleep(Duration::from_millis(100))

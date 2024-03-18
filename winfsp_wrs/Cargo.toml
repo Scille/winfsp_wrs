@@ -1,24 +1,13 @@
 [package]
 name = "winfsp_wrs"
-version = "0.1.0"
-edition = "2021"
-readme = "../README.md"
-repository = "https://github.com/Scille/winfsp_wrs"
-keywords = [
-    "filesystem",
-    "fuse",
-    "mountpoint",
-    "windows",
-    "winfsp",
-]
-categories = [
-    "binding",
-    "filesystem",
-    "mountpoint",
-    "os::windows-api"
-]
-description = "WinFSP wrapper for rust"
-license = "MIT OR Apache-2.0"
+version = "0.2.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -34,11 +23,8 @@ icon = [
     "windows-sys/Win32_UI_Shell",
 ]
 
-[build-dependencies]
-bindgen = "0.68.1"
-registry = { version = "1.2.3" }
-
 [dependencies]
+winfsp_wrs_sys = { path = "../winfsp_wrs_sys", version = "0.2.0" }
 chrono = "0.4.33"
 widestring = "1.0.2"
 

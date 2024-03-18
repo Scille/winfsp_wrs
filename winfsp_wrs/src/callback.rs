@@ -1,18 +1,17 @@
 use std::sync::Arc;
-
 use widestring::U16CStr;
 use windows_sys::Win32::Foundation::{
     STATUS_BUFFER_OVERFLOW, STATUS_NOT_IMPLEMENTED, STATUS_REPARSE, STATUS_SUCCESS,
 };
+use winfsp_wrs_sys::{
+    FspFileSystemAddDirInfo, FspFileSystemFindReparsePoint, FspFileSystemResolveReparsePoints,
+    FspFileSystemStopServiceIfNecessary, BOOLEAN, FSP_FILE_SYSTEM, FSP_FILE_SYSTEM_INTERFACE,
+    FSP_FSCTL_DIR_INFO, FSP_FSCTL_FILE_INFO, FSP_FSCTL_VOLUME_INFO, NTSTATUS,
+    PFILE_FULL_EA_INFORMATION, PIO_STATUS_BLOCK, PSECURITY_DESCRIPTOR, PSIZE_T, PUINT32, PULONG,
+    PVOID, PWSTR, SECURITY_INFORMATION, SIZE_T, UINT32, UINT64, ULONG,
+};
 
 use crate::{
-    ext::{
-        FspFileSystemAddDirInfo, FspFileSystemFindReparsePoint, FspFileSystemResolveReparsePoints,
-        BOOLEAN, FSP_FILE_SYSTEM, FSP_FILE_SYSTEM_INTERFACE, FSP_FSCTL_DIR_INFO,
-        FSP_FSCTL_FILE_INFO, FSP_FSCTL_VOLUME_INFO, NTSTATUS, PFILE_FULL_EA_INFORMATION,
-        PIO_STATUS_BLOCK, PSECURITY_DESCRIPTOR, PSIZE_T, PUINT32, PULONG, PVOID, PWSTR,
-        SECURITY_INFORMATION, SIZE_T, UINT32, UINT64, ULONG,
-    },
     CleanupFlags, CreateFileInfo, CreateOptions, DirInfo, FileAccessRights, FileAttributes,
     FileContextMode, FileInfo, PSecurityDescriptor, SecurityDescriptor, VolumeInfo, WriteMode,
 };
@@ -1392,7 +1391,7 @@ impl Interface {
 
         C::dispatcher_stopped(fs, normally != 0);
 
-        crate::ext::FspFileSystemStopServiceIfNecessary(file_system, normally)
+        FspFileSystemStopServiceIfNecessary(file_system, normally)
     }
 
     pub(crate) fn interface<Ctx: FileSystemContext>() -> FSP_FILE_SYSTEM_INTERFACE {

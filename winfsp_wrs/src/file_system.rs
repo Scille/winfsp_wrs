@@ -3,7 +3,6 @@ use std::{
     path::Path,
     process::{Command, ExitStatus},
 };
-
 use widestring::{u16cstr, U16CStr, U16CString};
 use windows_sys::Win32::Foundation::STATUS_SUCCESS;
 #[cfg(feature = "icon")]
@@ -12,18 +11,17 @@ use windows_sys::Win32::{
     Storage::FileSystem::{CreateFileW, WriteFile},
     UI::Shell::PathMakeSystemFolderW,
 };
-
-use crate::{
-    ext::{
-        FspFileSystemCreate, FspFileSystemRemoveMountPoint, FspFileSystemSetMountPoint,
-        FspFileSystemSetOperationGuardStrategyF, FspFileSystemStartDispatcher,
-        FspFileSystemStopDispatcher, FSP_FILE_SYSTEM, FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY,
-        FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_COARSE,
-        FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FINE,
-        FSP_FSCTL_VOLUME_PARAMS, NTSTATUS,
-    },
-    FileContextKind, FileSystemContext, Interface,
+use winfsp_wrs_sys::{
+    FspFileSystemCreate, FspFileSystemRemoveMountPoint, FspFileSystemSetMountPoint,
+    FspFileSystemSetOperationGuardStrategyF, FspFileSystemStartDispatcher,
+    FspFileSystemStopDispatcher, FSP_FILE_SYSTEM, FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY,
+    FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_COARSE,
+    FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FINE,
+    FSP_FSCTL_VOLUME_PARAMS, NTSTATUS,
 };
+
+use crate::{FileContextKind, FileSystemContext, Interface};
+
 #[cfg(feature = "icon")]
 use crate::{FileAccessRights, FileAttributes, FileCreationDisposition, FileShareMode};
 

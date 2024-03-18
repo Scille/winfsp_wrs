@@ -1,0 +1,10 @@
+[package]
+name = "winfsp_wrs_build"
+version = "0.2.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true

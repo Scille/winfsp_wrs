@@ -1,18 +1,17 @@
 use std::sync::Arc;
-
-use widestring::{U16CStr, U16CString};
+use widestring::U16CStr;
 use windows_sys::Win32::Foundation::{
     STATUS_BUFFER_OVERFLOW, STATUS_NOT_IMPLEMENTED, STATUS_REPARSE, STATUS_SUCCESS,
 };
+use winfsp_wrs_sys::{
+    FspFileSystemAddDirInfo, FspFileSystemFindReparsePoint, FspFileSystemResolveReparsePoints,
+    FspFileSystemStopServiceIfNecessary, BOOLEAN, FSP_FILE_SYSTEM, FSP_FILE_SYSTEM_INTERFACE,
+    FSP_FSCTL_DIR_INFO, FSP_FSCTL_FILE_INFO, FSP_FSCTL_VOLUME_INFO, NTSTATUS,
+    PFILE_FULL_EA_INFORMATION, PIO_STATUS_BLOCK, PSECURITY_DESCRIPTOR, PSIZE_T, PUINT32, PULONG,
+    PVOID, PWSTR, SECURITY_INFORMATION, SIZE_T, UINT32, UINT64, ULONG,
+};
 
 use crate::{
-    ext::{
-        FspFileSystemAddDirInfo, FspFileSystemFindReparsePoint, FspFileSystemResolveReparsePoints,
-        BOOLEAN, FSP_FILE_SYSTEM, FSP_FILE_SYSTEM_INTERFACE, FSP_FSCTL_DIR_INFO,
-        FSP_FSCTL_FILE_INFO, FSP_FSCTL_VOLUME_INFO, NTSTATUS, PFILE_FULL_EA_INFORMATION,
-        PIO_STATUS_BLOCK, PSECURITY_DESCRIPTOR, PSIZE_T, PUINT32, PULONG, PVOID, PWSTR,
-        SECURITY_INFORMATION, SIZE_T, UINT32, UINT64, ULONG,
-    },
     CleanupFlags, CreateFileInfo, CreateOptions, DirInfo, FileAccessRights, FileAttributes,
     FileContextMode, FileInfo, PSecurityDescriptor, SecurityDescriptor, VolumeInfo, WriteMode,
 };
@@ -80,11 +79,15 @@ impl FileContextKind for usize {
 pub trait FileSystemContext {
     type FileContext: FileContextKind;
 
+    /// `SetDelete` takes precedence over `CanDelete` if both are defined in `FSP_FILE_SYSTEM_INTERFACE`.
+    /// If this boolean is not set, `FSP_FILE_SYSTEM_INTERFACE`'s `SetDelete` function will not be set.
+    const SET_DELETE_DEFINED: bool = false;
+
     /// Get volume information.
     fn get_volume_info(&self) -> Result<VolumeInfo, NTSTATUS>;
 
     /// Set volume label.
-    fn set_volume_label(&self, _volume_label: &U16CStr) -> Result<(), NTSTATUS> {
+    fn set_volume_label(&self, _volume_label: &U16CStr) -> Result<VolumeInfo, NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
     }
 
@@ -107,14 +110,14 @@ pub trait FileSystemContext {
     ) -> Result<(FileAttributes, PSecurityDescriptor, bool), NTSTATUS>;
 
     /// Create new file or directory.
-    fn create(
+    fn create_ex(
         &self,
         _file_name: &U16CStr,
         _create_file_info: CreateFileInfo,
         _security_descriptor: SecurityDescriptor,
         _buffer: &[u8],
         _extra_buffer_is_reparse_point: bool,
-    ) -> Result<Self::FileContext, NTSTATUS> {
+    ) -> Result<(Self::FileContext, FileInfo), NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
     }
 
@@ -124,17 +127,17 @@ pub trait FileSystemContext {
         file_name: &U16CStr,
         create_options: CreateOptions,
         granted_access: FileAccessRights,
-    ) -> Result<Self::FileContext, NTSTATUS>;
+    ) -> Result<(Self::FileContext, FileInfo), NTSTATUS>;
 
     /// Overwrite a file.
-    fn overwrite(
+    fn overwrite_ex(
         &self,
         _file_context: Self::FileContext,
         _file_attributes: FileAttributes,
         _replace_file_attributes: bool,
         _allocation_size: u64,
         _buffer: &[u8],
-    ) -> Result<(), NTSTATUS> {
+    ) -> Result<FileInfo, NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
     }
 
@@ -165,14 +168,13 @@ pub trait FileSystemContext {
         &self,
         _file_context: Self::FileContext,
         _buffer: &[u8],
-        _offset: u64,
         _mode: WriteMode,
-    ) -> Result<usize, NTSTATUS> {
+    ) -> Result<(usize, FileInfo), NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
     }
 
     /// Flush a file or volume.
-    fn flush(&self, _file_context: Self::FileContext) -> Result<(), NTSTATUS> {
+    fn flush(&self, _file_context: Self::FileContext) -> Result<FileInfo, NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
     }
 
@@ -188,7 +190,7 @@ pub trait FileSystemContext {
         _last_access_time: u64,
         _last_write_time: u64,
         _change_time: u64,
-    ) -> Result<(), NTSTATUS> {
+    ) -> Result<FileInfo, NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
     }
 
@@ -198,7 +200,7 @@ pub trait FileSystemContext {
         _file_context: Self::FileContext,
         _new_size: u64,
         _set_allocation_size: bool,
-    ) -> Result<(), NTSTATUS> {
+    ) -> Result<FileInfo, NTSTATUS> {
         Err(STATUS_NOT_IMPLEMENTED)
     }
 
@@ -241,11 +243,14 @@ pub trait FileSystemContext {
     }
 
     /// Read a directory.
+    ///
+    /// `add_dir_info` returns `false` if there is no more space left to add elements.
     fn read_directory(
         &self,
         file_context: Self::FileContext,
         marker: Option<&U16CStr>,
-    ) -> Result<Vec<(U16CString, FileInfo)>, NTSTATUS>;
+        add_dir_info: impl FnMut(DirInfo) -> bool,
+    ) -> Result<(), NTSTATUS>;
 
     /// Get reparse point.
     fn get_reparse_point(
@@ -358,11 +363,11 @@ impl Interface {
         let fs = &*(*file_system).UserContext.cast::<C>();
 
         match C::get_volume_info(fs) {
-            Err(e) => e,
             Ok(vi) => {
                 *volume_info = vi.0;
                 STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -379,8 +384,11 @@ impl Interface {
         let fs = &*(*file_system).UserContext.cast::<C>();
 
         match C::set_volume_label(fs, U16CStr::from_ptr_str(volume_label)) {
+            Ok(vi) => {
+                *volume_info = vi.0;
+                STATUS_SUCCESS
+            }
             Err(e) => e,
-            Ok(()) => Self::get_volume_info_ext::<C>(file_system, volume_info),
         }
     }
 
@@ -435,7 +443,6 @@ impl Interface {
         let file_name = U16CStr::from_ptr_str(file_name);
 
         match C::get_security_by_name(fs, file_name, find_reparse_point) {
-            Err(e) => e,
             Ok((fa, sd, reparse)) => {
                 if !p_file_attributes.is_null() {
                     p_file_attributes.write(fa.0)
@@ -463,6 +470,7 @@ impl Interface {
                     STATUS_SUCCESS
                 }
             }
+            Err(e) => e,
         }
     }
 
@@ -503,11 +511,12 @@ impl Interface {
             CreateOptions(create_options),
             FileAccessRights(granted_access),
         ) {
-            Err(e) => e,
-            Ok(fctx) => {
+            Ok((fctx, finfo)) => {
                 C::FileContext::write(fctx, p_file_context);
-                Self::get_file_info_ext::<C>(file_system, *p_file_context, file_info)
+                *file_info = finfo.0;
+                STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -570,11 +579,11 @@ impl Interface {
         let buffer = std::slice::from_raw_parts_mut(buffer.cast(), length as usize);
 
         match C::read(fs, fctx, buffer, offset) {
-            Err(e) => e,
             Ok(bytes_transferred) => {
                 *p_bytes_transferred = bytes_transferred as ULONG;
                 STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -609,22 +618,22 @@ impl Interface {
         let buffer = std::slice::from_raw_parts(buffer.cast(), length as usize);
 
         let mode = match (write_to_end_of_file != 0, constrained_io != 0) {
-            (false, false) => WriteMode::Normal,
-            (false, true) => WriteMode::Constrained,
-            (true, false) => WriteMode::StartEOF,
+            (false, false) => WriteMode::Normal { offset },
+            (false, true) => WriteMode::ConstrainedIO { offset },
+            (true, false) => WriteMode::WriteToEOF,
             (true, true) => {
                 *p_bytes_transferred = 0;
                 return Self::get_file_info_ext::<C>(file_system, file_context, file_info);
             }
         };
 
-        match C::write(fs, fctx, buffer, offset, mode) {
-            Err(e) => e,
-            Ok(bytes_transfered) => {
+        match C::write(fs, fctx, buffer, mode) {
+            Ok((bytes_transfered, finfo)) => {
                 *p_bytes_transferred = bytes_transfered as ULONG;
-
-                Self::get_file_info_ext::<C>(file_system, file_context, file_info)
+                *file_info = finfo.0;
+                STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -645,8 +654,11 @@ impl Interface {
         let fctx = C::FileContext::access(file_context);
 
         match C::flush(fs, fctx) {
+            Ok(finfo) => {
+                *file_info = finfo.0;
+                STATUS_SUCCESS
+            }
             Err(e) => e,
-            Ok(()) => Self::get_file_info_ext::<C>(file_system, file_context, file_info),
         }
     }
 
@@ -666,11 +678,11 @@ impl Interface {
         let fctx = C::FileContext::access(file_context);
 
         match C::get_file_info(fs, fctx) {
-            Err(e) => e,
             Ok(ret) => {
                 *file_info = ret.0;
                 STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -714,8 +726,11 @@ impl Interface {
             last_write_time,
             change_time,
         ) {
+            Ok(finfo) => {
+                *file_info = finfo.0;
+                STATUS_SUCCESS
+            }
             Err(e) => e,
-            Ok(()) => Self::get_file_info_ext::<C>(file_system, file_context, file_info),
         }
     }
 
@@ -740,8 +755,11 @@ impl Interface {
         let fctx = C::FileContext::access(file_context);
 
         match C::set_file_size(fs, fctx, new_size, set_allocation_size != 0) {
+            Ok(finfo) => {
+                *file_info = finfo.0;
+                STATUS_SUCCESS
+            }
             Err(e) => e,
-            Ok(()) => Self::get_file_info_ext::<C>(file_system, file_context, file_info),
         }
     }
 
@@ -762,8 +780,8 @@ impl Interface {
         let file_name = U16CStr::from_ptr_str(file_name);
 
         match C::can_delete(fs, fctx, file_name) {
-            Err(e) => e,
             Ok(()) => STATUS_SUCCESS,
+            Err(e) => e,
         }
     }
 
@@ -787,8 +805,8 @@ impl Interface {
         let new_file_name = U16CStr::from_ptr_str(new_file_name);
 
         match C::rename(fs, fctx, file_name, new_file_name, replace_if_exists != 0) {
-            Err(e) => e,
             Ok(()) => STATUS_SUCCESS,
+            Err(e) => e,
         }
     }
 
@@ -812,7 +830,6 @@ impl Interface {
         let fctx = C::FileContext::access(file_context);
 
         match C::get_security(fs, fctx) {
-            Err(e) => e,
             Ok(sd) => {
                 if !p_security_descriptor_size.is_null() {
                     if sd.len() as SIZE_T > p_security_descriptor_size.read() {
@@ -826,6 +843,7 @@ impl Interface {
 
                 STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -849,8 +867,8 @@ impl Interface {
         let modification_descriptor = PSecurityDescriptor::from_ptr(modification_descriptor);
 
         match C::set_security(fs, fctx, security_information, modification_descriptor) {
-            Err(e) => e,
             Ok(()) => STATUS_SUCCESS,
+            Err(e) => e,
         }
     }
 
@@ -887,29 +905,34 @@ impl Interface {
             Some(U16CStr::from_ptr_str(marker))
         };
 
-        match C::read_directory(fs, fctx, marker) {
-            Err(e) => e,
-            Ok(entries_info) => {
-                for (file_name, file_info) in entries_info {
-                    // FSP_FSCTL_DIR_INFO base struct + WCHAR[] string
-                    // Note: Windows does not use NULL-terminated string
-                    let dir_info = &mut DirInfo::new(file_info, &file_name);
+        let mut buffer_full = false;
+        let add_dir_info = |mut dir_info: DirInfo| {
+            let added = FspFileSystemAddDirInfo(
+                (&mut dir_info as *mut DirInfo).cast(),
+                buffer,
+                length,
+                p_bytes_transferred,
+            ) != 0;
+            if !added {
+                buffer_full = true;
+            }
+            added
+        };
 
-                    if FspFileSystemAddDirInfo(
-                        (dir_info as *mut DirInfo).cast(),
+        match C::read_directory(fs, fctx, marker, add_dir_info) {
+            Ok(()) => {
+                if !buffer_full {
+                    // EOF marker
+                    FspFileSystemAddDirInfo(
+                        std::ptr::null_mut(),
                         buffer,
                         length,
                         p_bytes_transferred,
-                    ) == 0
-                    {
-                        return STATUS_SUCCESS;
-                    }
+                    );
                 }
-
-                // EOF marker
-                FspFileSystemAddDirInfo(std::ptr::null_mut(), buffer, length, p_bytes_transferred);
                 STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -933,11 +956,11 @@ impl Interface {
         };
 
         match C::get_reparse_point_by_name(fs, file_name, is_directory != 0, buffer) {
-            Err(e) => e,
             Ok(bytes_transferred) => {
                 psize.write(bytes_transferred as SIZE_T);
                 STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -1004,11 +1027,11 @@ impl Interface {
         let buffer = std::slice::from_raw_parts_mut(buffer.cast(), *p_size as usize);
 
         match C::get_reparse_point(fs, fctx, file_name, buffer) {
-            Err(e) => e,
             Ok(byte_transferred) => {
                 p_size.write(byte_transferred as SIZE_T);
                 STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -1033,8 +1056,8 @@ impl Interface {
         let buffer = std::slice::from_raw_parts_mut(buffer.cast(), size as usize);
 
         match C::set_reparse_point(fs, fctx, file_name, buffer) {
-            Err(e) => e,
             Ok(()) => STATUS_SUCCESS,
+            Err(e) => e,
         }
     }
 
@@ -1057,8 +1080,8 @@ impl Interface {
         let buffer = std::slice::from_raw_parts_mut(buffer.cast(), size as usize);
 
         match C::delete_reparse_point(fs, fctx, file_name, buffer) {
-            Err(e) => e,
             Ok(()) => STATUS_SUCCESS,
+            Err(e) => e,
         }
     }
 
@@ -1082,11 +1105,11 @@ impl Interface {
         let buffer = std::slice::from_raw_parts_mut(buffer.cast(), length as usize);
 
         match C::get_stream_info(fs, fctx, buffer) {
-            Err(e) => e,
             Ok(bytes_transferred) => {
                 p_bytes_transferred.write(bytes_transferred as ULONG);
                 STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -1110,11 +1133,10 @@ impl Interface {
         let file_name = U16CStr::from_ptr_str(file_name);
 
         match C::get_dir_info_by_name(fs, fctx, file_name) {
-            Err(e) => e,
-            Ok(file_info) => {
+            Ok(finfo) => {
                 (*dir_info).Size =
                     (std::mem::size_of::<FSP_FSCTL_DIR_INFO>() + file_name.len() * 2) as u16;
-                (*dir_info).FileInfo = file_info.0;
+                (*dir_info).FileInfo = finfo.0;
                 std::ptr::copy(
                     file_name.as_ptr(),
                     (*dir_info).FileNameBuf.as_mut_ptr(),
@@ -1122,6 +1144,7 @@ impl Interface {
                 );
                 STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -1154,11 +1177,11 @@ impl Interface {
             std::slice::from_raw_parts_mut(output_buffer.cast(), output_buffer_length as usize);
 
         match C::control(fs, fctx, control_code, input, output) {
-            Err(e) => e,
             Ok(bytes_transferred) => {
                 p_bytes_transferred.write(bytes_transferred as ULONG);
                 STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -1182,8 +1205,8 @@ impl Interface {
         let file_name = U16CStr::from_ptr_str(file_name);
 
         match C::set_delete(fs, fctx, file_name, delete_file_w != 0) {
-            Err(e) => e,
             Ok(()) => STATUS_SUCCESS,
+            Err(e) => e,
         }
     }
 
@@ -1238,7 +1261,7 @@ impl Interface {
         let sd = SecurityDescriptor::from_ptr(security_descriptor);
         let buffer = std::slice::from_raw_parts(extra_buffer.cast(), extra_length as usize);
 
-        match C::create(
+        match C::create_ex(
             fs,
             file_name,
             CreateFileInfo {
@@ -1251,11 +1274,12 @@ impl Interface {
             buffer,
             extra_buffer_is_reparse_point != 0,
         ) {
-            Err(e) => e,
-            Ok(fctx) => {
+            Ok((fctx, finfo)) => {
                 C::FileContext::write(fctx, p_file_context);
-                Self::get_file_info_ext::<C>(file_system, *p_file_context, file_info)
+                *file_info = finfo.0;
+                STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -1286,7 +1310,7 @@ impl Interface {
         let fctx = C::FileContext::access(file_context);
         let buffer = std::slice::from_raw_parts(ea.cast(), ea_length as usize);
 
-        match C::overwrite(
+        match C::overwrite_ex(
             fs,
             fctx,
             FileAttributes(file_attributes),
@@ -1294,8 +1318,11 @@ impl Interface {
             allocation_size,
             buffer,
         ) {
+            Ok(finfo) => {
+                *file_info = finfo.0;
+                STATUS_SUCCESS
+            }
             Err(e) => e,
-            Ok(()) => Self::get_file_info_ext::<C>(file_system, file_context, file_info),
         }
     }
 
@@ -1319,11 +1346,11 @@ impl Interface {
         let buffer = std::slice::from_raw_parts(ea.cast(), ea_length as usize);
 
         match C::get_ea(fs, fctx, buffer) {
-            Err(e) => e,
             Ok(bytes_transfered) => {
                 p_bytes_transferred.write(bytes_transfered as ULONG);
                 STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -1348,11 +1375,11 @@ impl Interface {
         let buffer = std::slice::from_raw_parts(ea.cast(), ea_length as usize);
 
         match C::set_ea(fs, fctx, buffer) {
-            Err(e) => e,
             Ok(info) => {
                 file_info.write(info.0);
                 STATUS_SUCCESS
             }
+            Err(e) => e,
         }
     }
 
@@ -1364,11 +1391,11 @@ impl Interface {
 
         C::dispatcher_stopped(fs, normally != 0);
 
-        crate::ext::FspFileSystemStopServiceIfNecessary(file_system, normally)
+        FspFileSystemStopServiceIfNecessary(file_system, normally)
     }
 
     pub(crate) fn interface<Ctx: FileSystemContext>() -> FSP_FILE_SYSTEM_INTERFACE {
-        FSP_FILE_SYSTEM_INTERFACE {
+        let mut fsp_interface = FSP_FILE_SYSTEM_INTERFACE {
             CanDelete: Some(Self::can_delete_ext::<Ctx>),
             Cleanup: Some(Self::cleanup_ext::<Ctx>),
             Close: Some(Self::close_ext::<Ctx>),
@@ -1392,7 +1419,7 @@ impl Interface {
             Rename: Some(Self::rename_ext::<Ctx>),
             ResolveReparsePoints: Some(Self::resolve_reparse_points_ext::<Ctx>),
             SetBasicInfo: Some(Self::set_basic_info_ext::<Ctx>),
-            SetDelete: Some(Self::set_delete_ext::<Ctx>),
+            SetDelete: None,
             SetEa: Some(Self::set_ea_ext::<Ctx>),
             SetFileSize: Some(Self::set_file_size_ext::<Ctx>),
             SetReparsePoint: Some(Self::set_reparse_point_ext::<Ctx>),
@@ -1400,6 +1427,10 @@ impl Interface {
             SetVolumeLabelW: Some(Self::set_volume_label_w_ext::<Ctx>),
             Write: Some(Self::write_ext::<Ctx>),
             ..Default::default()
+        };
+        if Ctx::SET_DELETE_DEFINED {
+            fsp_interface.SetDelete = Some(Self::set_delete_ext::<Ctx>);
         }
+        fsp_interface
     }
 }

@@ -3,7 +3,6 @@ use std::{
     path::Path,
     process::{Command, ExitStatus},
 };
-
 use widestring::{u16cstr, U16CStr, U16CString};
 use windows_sys::Win32::Foundation::STATUS_SUCCESS;
 #[cfg(feature = "icon")]
@@ -12,18 +11,17 @@ use windows_sys::Win32::{
     Storage::FileSystem::{CreateFileW, WriteFile},
     UI::Shell::PathMakeSystemFolderW,
 };
-
-use crate::{
-    ext::{
-        FspFileSystemCreate, FspFileSystemRemoveMountPoint, FspFileSystemSetMountPoint,
-        FspFileSystemSetOperationGuardStrategyF, FspFileSystemStartDispatcher,
-        FspFileSystemStopDispatcher, FSP_FILE_SYSTEM, FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY,
-        FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_COARSE,
-        FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FINE,
-        FSP_FSCTL_VOLUME_PARAMS, NTSTATUS,
-    },
-    FileContextKind, FileSystemContext, Interface,
+use winfsp_wrs_sys::{
+    FspFileSystemCreate, FspFileSystemRemoveMountPoint, FspFileSystemSetMountPoint,
+    FspFileSystemSetOperationGuardStrategyF, FspFileSystemStartDispatcher,
+    FspFileSystemStopDispatcher, FSP_FILE_SYSTEM, FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY,
+    FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_COARSE,
+    FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FINE,
+    FSP_FSCTL_VOLUME_PARAMS, NTSTATUS,
 };
+
+use crate::{FileContextKind, FileSystemContext, Interface};
+
 #[cfg(feature = "icon")]
 use crate::{FileAccessRights, FileAttributes, FileCreationDisposition, FileShareMode};
 
@@ -324,6 +322,11 @@ pub struct FileSystem<Ctx: FileSystemContext> {
     phantom: PhantomData<Ctx>,
 }
 
+// SAFETY: FSP_FILE_SYSTEM contains `*mut c_void` pointers that cannot be send between threads
+// by default. However this structure is only used by WinFSP (and not exposed to the user) which
+// is deep in C++ land where Rust safety rules do not apply.
+unsafe impl<Ctx: FileSystemContext> Send for FileSystem<Ctx> {}
+
 impl<Ctx: FileSystemContext> FileSystem<Ctx> {
     pub fn volume_params(&self) -> &VolumeParams {
         &self.params.volume_params
@@ -354,6 +357,9 @@ impl<Ctx: FileSystemContext> FileSystem<Ctx> {
 
             let device_name = params.volume_params.device_path();
             let res = FspFileSystemCreate(
+                // `device_name` contains const data, so this `cast_mut` is a bit scary !
+                // However, it is only a limitation in the type system (we need to cast
+                // to `PWSTR`): in practice this parameter is never modified.
                 device_name.as_ptr().cast_mut(),
                 &params.volume_params.0,
                 interface,

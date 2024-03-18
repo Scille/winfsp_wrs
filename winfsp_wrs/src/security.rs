@@ -6,8 +6,7 @@ use windows_sys::Win32::{
         GetSecurityDescriptorLength,
     },
 };
-
-use crate::ext::{
+use winfsp_wrs_sys::{
     FspDeleteSecurityDescriptor, FspSetSecurityDescriptor, NTSTATUS, PSECURITY_DESCRIPTOR,
 };
 

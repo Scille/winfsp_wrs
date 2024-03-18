@@ -1,9 +1,7 @@
-use widestring::U16CStr;
+use widestring::{U16CStr, U16Str};
+use winfsp_wrs_sys::{FSP_FSCTL_DIR_INFO, FSP_FSCTL_FILE_INFO, FSP_FSCTL_VOLUME_INFO};
 
-use crate::{
-    ext::{FSP_FSCTL_DIR_INFO, FSP_FSCTL_FILE_INFO, FSP_FSCTL_VOLUME_INFO},
-    CreateOptions, FileAccessRights, FileAttributes,
-};
+use crate::{CreateOptions, FileAccessRights, FileAttributes};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct FileInfo(pub(crate) FSP_FSCTL_FILE_INFO);
@@ -117,43 +115,73 @@ impl FileInfo {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct VolumeInfo(pub(crate) FSP_FSCTL_VOLUME_INFO);
 
+#[derive(Debug)]
+pub struct VolumeLabelNameTooLong;
+
 impl VolumeInfo {
-    const VOLUME_LABEL_MAX_LEN: usize = 31;
+    // Max len correspond to the entire `FSP_FSCTL_VOLUME_INFO.VolumeLabel` buffer given
+    // there should be no null-terminator (`FSP_FSCTL_VOLUME_INFO.VolumeLabelLength` is
+    // used instead).
+    const VOLUME_LABEL_MAX_LEN: usize = 32;
 
-    pub fn new(total_size: u64, free_size: u64, volume_label: &U16CStr) -> Self {
-        assert!(volume_label.len() <= Self::VOLUME_LABEL_MAX_LEN);
+    pub fn new(
+        total_size: u64,
+        free_size: u64,
+        volume_label: &U16Str,
+    ) -> Result<Self, VolumeLabelNameTooLong> {
+        if volume_label.len() > Self::VOLUME_LABEL_MAX_LEN {
+            return Err(VolumeLabelNameTooLong);
+        }
 
-        let mut vl = [0; Self::VOLUME_LABEL_MAX_LEN + 1];
+        let mut vl = [0; Self::VOLUME_LABEL_MAX_LEN];
         vl[..volume_label.len()].copy_from_slice(volume_label.as_slice());
 
-        Self(FSP_FSCTL_VOLUME_INFO {
+        Ok(Self(FSP_FSCTL_VOLUME_INFO {
             TotalSize: total_size,
             FreeSize: free_size,
+            // It is unintuitive, but the length is in bytes, not in u16s
             VolumeLabelLength: (volume_label.len() * std::mem::size_of::<u16>()) as u16,
             VolumeLabel: vl,
-        })
+        }))
     }
 
     pub fn total_size(&self) -> u64 {
         self.0.TotalSize
     }
 
+    pub fn set_total_size(&mut self, size: u64) {
+        self.0.TotalSize = size;
+    }
+
     pub fn free_size(&self) -> u64 {
         self.0.FreeSize
     }
 
-    pub fn volume_label(&self) -> &U16CStr {
-        U16CStr::from_slice(&self.0.VolumeLabel[..self.0.VolumeLabelLength as usize]).unwrap()
+    pub fn set_free_size(&mut self, size: u64) {
+        self.0.FreeSize = size;
     }
 
-    pub fn set_volume_label(&mut self, volume_label: &U16CStr) {
-        assert!(volume_label.len() <= Self::VOLUME_LABEL_MAX_LEN);
+    pub fn volume_label(&self) -> &U16Str {
+        let len_in_u16s = self.0.VolumeLabelLength as usize / std::mem::size_of::<u16>();
+        U16Str::from_slice(&self.0.VolumeLabel[..len_in_u16s])
+    }
 
-        self.0.VolumeLabelLength = volume_label.len() as u16;
+    pub fn set_volume_label(
+        &mut self,
+        volume_label: &U16Str,
+    ) -> Result<(), VolumeLabelNameTooLong> {
+        if volume_label.len() > Self::VOLUME_LABEL_MAX_LEN {
+            return Err(VolumeLabelNameTooLong);
+        }
+
+        // It is unintuitive, but the length is in bytes, not in u16s
+        self.0.VolumeLabelLength = (volume_label.len() * std::mem::size_of::<u16>()) as u16;
         self.0.VolumeLabel[..volume_label.len()].copy_from_slice(volume_label.as_slice());
+
+        Ok(())
     }
 }
 
@@ -175,7 +203,7 @@ pub struct DirInfo {
 }
 
 impl DirInfo {
-    pub(crate) fn new(file_info: FileInfo, file_name: &U16CStr) -> Self {
+    pub fn new(file_info: FileInfo, file_name: &U16CStr) -> Self {
         let mut buf = [0; 255];
         buf[..file_name.len()].copy_from_slice(file_name.as_slice());
 
@@ -186,10 +214,54 @@ impl DirInfo {
             file_name: buf,
         }
     }
+
+    pub fn from_str(file_info: FileInfo, file_name: &str) -> Self {
+        let mut info = Self {
+            size: 0,
+            file_info,
+            _padding: [0; 24],
+            file_name: [0; 255],
+        };
+
+        let mut i = 0;
+        for c in file_name.encode_utf16() {
+            info.file_name[i] = c;
+            i += 1;
+        }
+        info.size =
+            (std::mem::size_of::<FSP_FSCTL_DIR_INFO>() + i * std::mem::size_of::<u16>()) as u16;
+
+        info
+    }
+
+    pub fn from_osstr(file_info: FileInfo, file_name: &std::ffi::OsStr) -> Self {
+        use std::os::windows::ffi::OsStrExt;
+
+        let mut info = Self {
+            size: 0,
+            file_info,
+            _padding: [0; 24],
+            file_name: [0; 255],
+        };
+
+        let mut i = 0;
+        for c in file_name.encode_wide() {
+            info.file_name[i] = c;
+            i += 1;
+        }
+        info.size =
+            (std::mem::size_of::<FSP_FSCTL_DIR_INFO>() + i * std::mem::size_of::<u16>()) as u16;
+
+        info
+    }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum WriteMode {
-    Normal,
-    Constrained,
-    StartEOF,
+    /// Regular write mode: start at the offset and extend the file as much as needed.
+    Normal { offset: u64 },
+    /// The file system must not extend the file (i.e. change the file size).
+    ConstrainedIO { offset: u64 },
+    /// The file system must write to the current end of file.
+    WriteToEOF,
 }

@@ -1,5 +1,4 @@
 mod callback;
-pub mod ext;
 mod file_system;
 mod filetime;
 mod flags;
@@ -21,7 +20,7 @@ pub use flags::{
     FileShareMode,
 };
 pub use info::{CreateFileInfo, DirInfo, FileInfo, VolumeInfo, WriteMode};
-pub use init::init;
+pub use init::{init, InitError};
 pub use security::{PSecurityDescriptor, SecurityDescriptor};
 
 // Reexport

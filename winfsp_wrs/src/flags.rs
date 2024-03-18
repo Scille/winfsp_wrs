@@ -39,7 +39,7 @@ macro_rules! impl_debug_flags {
     ($name:ident) => {
         impl std::fmt::Debug for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.debug_tuple("FileAttributes")
+                f.debug_tuple(stringify!($name))
                     .field(&format_args!("0x{:X}", self.0))
                     .finish()
             }

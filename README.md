@@ -29,7 +29,13 @@ where `winfsp-tests` executable resides).
 
 (This is only needed when WinFSP headers change)
 
-Clang is needed by [rust-bindgen](https://github.com/rust-lang/rust-bindgen) for parsing WinFPS C++ API headers.
+Rust [bindgen CLI must be installed](https://rust-lang.github.io/rust-bindgen/command-line-usage.html)
+
+```cmd.exe
+cargo install bindgen-cli
+```
+
+On top of that, Clang is needed by [rust-bindgen](https://github.com/rust-lang/rust-bindgen) for parsing WinFPS C++ API headers.
 
 To install Clang (also [see rust-bindgen doc](https://rust-lang.github.io/rust-bindgen/requirements.html#windows)):
 

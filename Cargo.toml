@@ -15,7 +15,7 @@ resolver = "2"
 [workspace.package]
 authors = [ "@Scille/parsec-dev", "@Scille/rust-code-owners" ]
 edition = "2021"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 version = "0.2.0"
 description = "WinFSP wrapper for rust"
 repository = "https://github.com/Scille/winfsp_wrs"

@@ -35,7 +35,7 @@ Rust [bindgen CLI must be installed](https://rust-lang.github.io/rust-bindgen/co
 cargo install bindgen-cli
 ```
 
-On top of that, Clang is needed by [rust-bindgen](https://github.com/rust-lang/rust-bindgen) for parsing WinFPS C++ API headers.
+On top of that, Clang is needed by [rust-bindgen](https://github.com/rust-lang/rust-bindgen) for parsing WinFSP C++ API headers.
 
 To install Clang (also [see rust-bindgen doc](https://rust-lang.github.io/rust-bindgen/requirements.html#windows)):
 

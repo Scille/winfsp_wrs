@@ -135,7 +135,10 @@ impl SecurityDescriptor {
             // Free psd
             FspDeleteSecurityDescriptor(
                 psd,
-                Some(std::mem::transmute(FspSetSecurityDescriptor as *const ())),
+                Some(std::mem::transmute::<
+                    *const (),
+                    unsafe extern "C" fn() -> NTSTATUS,
+                >(FspSetSecurityDescriptor as *const ())),
             );
 
             Ok(sd)

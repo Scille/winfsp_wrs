@@ -31,13 +31,15 @@ use crate::{FileAccessRights, FileAttributes, FileCreationDisposition, FileShare
 pub enum OperationGuardStrategy {
     #[default]
     /// A fine-grained concurrency model where file system NAMESPACE accesses are
-    /// guarded using an exclusive-shared (read-write) lock. File I/O is not
-    /// guarded and concurrent reads/writes/etc. are possible. [Note that the FSD
-    /// will still apply an exclusive-shared lock PER INDIVIDUAL FILE, but it will
-    /// not limit I/O operations for different files.] The fine-grained concurrency
-    /// model applies the exclusive-shared lock as follows:
+    /// guarded using an exclusive-shared (read-write) lock.
+    ///
+    /// File I/O is not guarded and concurrent reads/writes/etc. are possible. (Note
+    /// that the FSD will still apply an exclusive-shared lock PER INDIVIDUAL FILE,
+    /// but it will not limit I/O operations for different files.)
+    ///
+    /// The fine-grained concurrency model applies the exclusive-shared lock as follows:
     /// - EXCL: SetVolumeLabel, Flush(Volume), Create, Cleanup(Delete),
-    /// SetInformation(Rename)
+    ///   SetInformation(Rename)
     /// - SHRD: GetVolumeInfo, Open, SetInformation(Disposition), ReadDirectory
     /// - NONE: all other operations
     Fine = FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FINE,
@@ -336,12 +338,14 @@ impl<Ctx: FileSystemContext> FileSystem<Ctx> {
         &mut self.params.volume_params
     }
 
-    /// - Create a file system object.
-    /// - Set file system locking strategy.
-    /// - Set the mount point for a file system.
-    /// A value of None means that the file system should use the next available
-    /// drive letter counting downwards from Z: as its mount point.
-    /// - Start the file system dispatcher.
+    /// Start the mountpoint, i.e.:
+    /// - Create a file system object (`FspFileSystemCreate`).
+    /// - Set file system locking strategy (`FspFileSystemSetOperationGuardStrategyF`).
+    /// - Set the mount point for a file system (`FspFileSystemSetMountPoint`).
+    /// - Start the file system dispatcher (`FspFileSystemStartDispatcher`).
+    ///
+    /// A value of `None` for `mountpoint` means that the file system should use
+    /// the next available drive letter counting downwards from `Z:`.
     pub fn new(
         mut params: Params,
         mountpoint: Option<&U16CStr>,
@@ -476,6 +480,9 @@ impl<Ctx: FileSystemContext> FileSystem<Ctx> {
         }
     }
 
+    /// Stop the mountpoint, i.e.:
+    /// - Stop the file system dispatcher (`FspFileSystemStopDispatcher`).
+    /// - Remove the mount point for the file system (`FspFileSystemRemoveMountPoint`).
     pub fn stop(mut self) {
         unsafe {
             FspFileSystemStopDispatcher(&mut self.inner);

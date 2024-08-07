@@ -99,10 +99,10 @@ pub trait FileSystemContext {
     /// - reparse (false if `reparse_point` is not supported)
     ///
     /// [help]:
-    /// - find_reparse_point (optional, can be ignored): helper to find reparse
-    /// points (`get_reparse_point_by_name` should be implemented)
-    /// if reparse point is found, return the `FileAttributes` and `reparse` should be
-    /// set to `true`.
+    /// - find_reparse_point (optional, can be ignored): Helper to find reparse
+    ///   points (`get_reparse_point_by_name` should be implemented).
+    ///   If reparse point is found, return the `FileAttributes` and `reparse` should be
+    ///   set to `true`.
     fn get_security_by_name(
         &self,
         file_name: &U16CStr,

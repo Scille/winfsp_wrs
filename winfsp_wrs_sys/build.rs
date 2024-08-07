@@ -26,7 +26,7 @@ fn main() {
     if cfg!(all(target_os = "windows", target_env = "msvc")) {
         if cfg!(target_arch = "x86_64") {
             println!("cargo:rustc-link-lib=dylib=winfsp-x64");
-        } else if cfg!(target_arch = "i686") {
+        } else if cfg!(target_arch = "x86") {
             println!("cargo:rustc-link-lib=dylib=winfsp-x86");
         } else if cfg!(target_arch = "aarch64") {
             println!("cargo:rustc-link-lib=dylib=winfsp-a64");

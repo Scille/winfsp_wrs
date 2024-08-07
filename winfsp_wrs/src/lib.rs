@@ -6,9 +6,9 @@ mod info;
 mod init;
 mod security;
 
-pub(crate) use callback::Interface;
+pub(crate) use callback::TrampolineInterface;
 
-pub use callback::{FileContextKind, FileSystemContext};
+pub use callback::{FileContextKind, FileSystemInterface};
 #[cfg(feature = "icon")]
 pub use file_system::set_folder_icon;
 pub use file_system::{

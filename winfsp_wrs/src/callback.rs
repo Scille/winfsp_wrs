@@ -1,8 +1,6 @@
 use std::sync::Arc;
 use widestring::U16CStr;
-use windows_sys::Win32::Foundation::{
-    STATUS_BUFFER_OVERFLOW, STATUS_NOT_IMPLEMENTED, STATUS_REPARSE, STATUS_SUCCESS,
-};
+use windows_sys::Win32::Foundation::{STATUS_BUFFER_OVERFLOW, STATUS_REPARSE, STATUS_SUCCESS};
 use winfsp_wrs_sys::{
     FspFileSystemAddDirInfo, FspFileSystemFindReparsePoint, FspFileSystemResolveReparsePoints,
     FspFileSystemStopServiceIfNecessary, BOOLEAN, FSP_FILE_SYSTEM, FSP_FILE_SYSTEM_INTERFACE,
@@ -76,19 +74,91 @@ impl FileContextKind for usize {
     }
 }
 
-pub trait FileSystemContext {
+/// High level interface over `FSP_FILE_SYSTEM_INTERFACE`.
+///
+/// This trait requires to overwrite all WinFSP callbacks you need and it corresponding
+/// `xxx_DEFINED` associated const boolean.
+///
+/// This is needed to properly build the `FSP_FILE_SYSTEM_INTERFACE` struct, as
+/// a callback pointer set to `NULL` (i.e. if `xxx_DEFINED=false`) leads to a different
+/// behavior that a callback pointer containing a mock implementation (e.g.
+/// returning `Err(STATUS_NOT_IMPLEMENTED)`).
+///
+/// So the way to work with this trait is to overwrite the method and `xxx_DEFINED` for
+/// each function pointer you will need in `FSP_FILE_SYSTEM_INTERFACE`:
+///
+/// ```rust
+/// struct MyFS;
+/// impl FileSystemInterface for MyFS {
+///     type FileContext: usize;
+///     // `CREATE_DEFINED` not overwritten, hence `FSP_FILE_SYSTEM_INTERFACE.Create == NULL`
+///     const CREATE_EX_DEFINED: bool = true;  // i.e. `FSP_FILE_SYSTEM_INTERFACE.CreateEx != NULL`
+///     fn create_ex(
+///         &self,
+///         file_name: &U16CStr,
+///         create_file_info: CreateFileInfo,
+///         security_descriptor: SecurityDescriptor,
+///         buffer: &[u8],
+///         extra_buffer_is_reparse_point: bool,
+///     ) -> Result<(Self::FileContext, FileInfo), NTSTATUS> {
+///         ...
+///     }
+/// }
+/// ```
+///
+/// *Notes*:
+/// - Associated method and `xxx_DEFINED` const must be overwritten together, as the
+///   method is simply ignored if `xxx_DEFINED` is not set, and setting `xxx_DEFINED`
+///   without overwritting the method means the function pointer relies on the method
+///   default implementation that panics whenever used (ah !).
+/// - If your are curious about the reason for using a trait here instead of a struct (or
+///   associated const fields with `Option<fn()>` type in the trait instead of methods), it
+///   all boils down to the fact some methods have an `impl Fn` function pointer as argument,
+///   which is only possible in trait method.
+pub trait FileSystemInterface {
     type FileContext: FileContextKind;
 
-    /// `SetDelete` takes precedence over `CanDelete` if both are defined in `FSP_FILE_SYSTEM_INTERFACE`.
-    /// If this boolean is not set, `FSP_FILE_SYSTEM_INTERFACE`'s `SetDelete` function will not be set.
+    const GET_VOLUME_INFO_DEFINED: bool = false;
+    const SET_VOLUME_LABEL_DEFINED: bool = false;
+    const GET_SECURITY_BY_NAME_DEFINED: bool = false;
+    const CREATE_DEFINED: bool = false;
+    const CREATE_EX_DEFINED: bool = false;
+    const OPEN_DEFINED: bool = false;
+    const OVERWRITE_DEFINED: bool = false;
+    const OVERWRITE_EX_DEFINED: bool = false;
+    const CLEANUP_DEFINED: bool = false;
+    const CLOSE_DEFINED: bool = false;
+    const READ_DEFINED: bool = false;
+    const WRITE_DEFINED: bool = false;
+    const FLUSH_DEFINED: bool = false;
+    const GET_FILE_INFO_DEFINED: bool = false;
+    const SET_BASIC_INFO_DEFINED: bool = false;
+    const SET_FILE_SIZE_DEFINED: bool = false;
+    const CAN_DELETE_DEFINED: bool = false;
+    const RENAME_DEFINED: bool = false;
+    const GET_SECURITY_DEFINED: bool = false;
+    const SET_SECURITY_DEFINED: bool = false;
+    const READ_DIRECTORY_DEFINED: bool = false;
+    const GET_REPARSE_POINT_DEFINED: bool = false;
+    const SET_REPARSE_POINT_DEFINED: bool = false;
+    const DELETE_REPARSE_POINT_DEFINED: bool = false;
+    const GET_STREAM_INFO_DEFINED: bool = false;
+    const GET_DIR_INFO_BY_NAME_DEFINED: bool = false;
+    const CONTROL_DEFINED: bool = false;
     const SET_DELETE_DEFINED: bool = false;
+    const GET_EA_DEFINED: bool = false;
+    const SET_EA_DEFINED: bool = false;
+    const DISPATCHER_STOPPED_DEFINED: bool = false;
+    const RESOLVE_REPARSE_POINTS_DEFINED: bool = false;
 
     /// Get volume information.
-    fn get_volume_info(&self) -> Result<VolumeInfo, NTSTATUS>;
+    fn get_volume_info(&self) -> Result<VolumeInfo, NTSTATUS> {
+        unreachable!("To be used, trait method must be overwritten !");
+    }
 
     /// Set volume label.
     fn set_volume_label(&self, _volume_label: &U16CStr) -> Result<VolumeInfo, NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Get file or directory attributes and security descriptor given a file name.
@@ -105,11 +175,30 @@ pub trait FileSystemContext {
     ///   set to `true`.
     fn get_security_by_name(
         &self,
-        file_name: &U16CStr,
-        find_reparse_point: impl Fn() -> Option<FileAttributes>,
-    ) -> Result<(FileAttributes, PSecurityDescriptor, bool), NTSTATUS>;
+        _file_name: &U16CStr,
+        _find_reparse_point: impl Fn() -> Option<FileAttributes>,
+    ) -> Result<(FileAttributes, PSecurityDescriptor, bool), NTSTATUS> {
+        unreachable!("To be used, trait method must be overwritten !");
+    }
 
     /// Create new file or directory.
+    ///
+    /// Note: `FileSystemContext::create_ex` takes precedence over `FileSystemContext::create`
+    fn create(
+        &self,
+        _file_name: &U16CStr,
+        _create_file_info: CreateFileInfo,
+        _security_descriptor: SecurityDescriptor,
+    ) -> Result<(Self::FileContext, FileInfo), NTSTATUS> {
+        unreachable!("To be used, trait method must be overwritten !");
+    }
+
+    /// Create new file or directory.
+    ///
+    /// This function works like `create`, except that it also accepts an extra buffer
+    /// that may contain extended attributes or a reparse point.
+    ///
+    /// Note: `FileSystemContext::create_ex` takes precedence over `FileSystemContext::create`
     fn create_ex(
         &self,
         _file_name: &U16CStr,
@@ -118,18 +207,37 @@ pub trait FileSystemContext {
         _buffer: &[u8],
         _extra_buffer_is_reparse_point: bool,
     ) -> Result<(Self::FileContext, FileInfo), NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Open a file or directory.
     fn open(
         &self,
-        file_name: &U16CStr,
-        create_options: CreateOptions,
-        granted_access: FileAccessRights,
-    ) -> Result<(Self::FileContext, FileInfo), NTSTATUS>;
+        _file_name: &U16CStr,
+        _create_options: CreateOptions,
+        _granted_access: FileAccessRights,
+    ) -> Result<(Self::FileContext, FileInfo), NTSTATUS> {
+        unreachable!("To be used, trait method must be overwritten !");
+    }
 
     /// Overwrite a file.
+    ///
+    /// Note: `FileSystemContext::overwrite_ex` takes precedence over `FileSystemContext::overwrite`
+    fn overwrite(
+        &self,
+        _file_context: Self::FileContext,
+        _file_attributes: FileAttributes,
+        _replace_file_attributes: bool,
+        _allocation_size: u64,
+    ) -> Result<FileInfo, NTSTATUS> {
+        unreachable!("To be used, trait method must be overwritten !");
+    }
+
+    /// Overwrite a file.
+    ///
+    /// This function works like `overwrite`, except that it also accepts EA (extended attributes).
+    ///
+    /// Note: `FileSystemContext::overwrite_ex` takes precedence over `FileSystemContext::overwrite`
     fn overwrite_ex(
         &self,
         _file_context: Self::FileContext,
@@ -138,7 +246,7 @@ pub trait FileSystemContext {
         _allocation_size: u64,
         _buffer: &[u8],
     ) -> Result<FileInfo, NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Cleanup a file.
@@ -148,10 +256,13 @@ pub trait FileSystemContext {
         _file_name: Option<&U16CStr>,
         _flags: CleanupFlags,
     ) {
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Close a file.
-    fn close(&self, _file_context: Self::FileContext) {}
+    fn close(&self, _file_context: Self::FileContext) {
+        unreachable!("To be used, trait method must be overwritten !");
+    }
 
     /// Read a file.
     fn read(
@@ -160,7 +271,7 @@ pub trait FileSystemContext {
         _buffer: &mut [u8],
         _offset: u64,
     ) -> Result<usize, NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Write a file.
@@ -170,16 +281,18 @@ pub trait FileSystemContext {
         _buffer: &[u8],
         _mode: WriteMode,
     ) -> Result<(usize, FileInfo), NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Flush a file or volume.
     fn flush(&self, _file_context: Self::FileContext) -> Result<FileInfo, NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Get file or directory information.
-    fn get_file_info(&self, file_context: Self::FileContext) -> Result<FileInfo, NTSTATUS>;
+    fn get_file_info(&self, _file_context: Self::FileContext) -> Result<FileInfo, NTSTATUS> {
+        unreachable!("To be used, trait method must be overwritten !");
+    }
 
     /// Set file or directory basic information.
     fn set_basic_info(
@@ -191,7 +304,7 @@ pub trait FileSystemContext {
         _last_write_time: u64,
         _change_time: u64,
     ) -> Result<FileInfo, NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Set file/allocation size.
@@ -201,16 +314,18 @@ pub trait FileSystemContext {
         _new_size: u64,
         _set_allocation_size: bool,
     ) -> Result<FileInfo, NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Determine whether a file or directory can be deleted.
+    ///
+    /// Note: `FileSystemContext::set_delete` takes precedence over `FileSystemContext::can_delete`
     fn can_delete(
         &self,
         _file_context: Self::FileContext,
         _file_name: &U16CStr,
     ) -> Result<(), NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Renames a file or directory.
@@ -221,7 +336,7 @@ pub trait FileSystemContext {
         _new_file_name: &U16CStr,
         _replace_if_exists: bool,
     ) -> Result<(), NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Get file or directory security descriptor.
@@ -229,7 +344,7 @@ pub trait FileSystemContext {
         &self,
         _file_context: Self::FileContext,
     ) -> Result<PSecurityDescriptor, NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Set file or directory security descriptor.
@@ -239,7 +354,7 @@ pub trait FileSystemContext {
         _security_information: u32,
         _modification_descriptor: PSecurityDescriptor,
     ) -> Result<(), NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Read a directory.
@@ -247,10 +362,12 @@ pub trait FileSystemContext {
     /// `add_dir_info` returns `false` if there is no more space left to add elements.
     fn read_directory(
         &self,
-        file_context: Self::FileContext,
-        marker: Option<&U16CStr>,
-        add_dir_info: impl FnMut(DirInfo) -> bool,
-    ) -> Result<(), NTSTATUS>;
+        _file_context: Self::FileContext,
+        _marker: Option<&U16CStr>,
+        _add_dir_info: impl FnMut(DirInfo) -> bool,
+    ) -> Result<(), NTSTATUS> {
+        unreachable!("To be used, trait method must be overwritten !");
+    }
 
     /// Get reparse point.
     fn get_reparse_point(
@@ -259,7 +376,7 @@ pub trait FileSystemContext {
         _file_name: &U16CStr,
         _buffer: &mut [u8],
     ) -> Result<usize, NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Set reparse point.
@@ -269,7 +386,7 @@ pub trait FileSystemContext {
         _file_name: &U16CStr,
         _buffer: &mut [u8],
     ) -> Result<(), NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Delete reparse point.
@@ -279,7 +396,7 @@ pub trait FileSystemContext {
         _file_name: &U16CStr,
         _buffer: &mut [u8],
     ) -> Result<(), NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Get named streams information.
@@ -288,7 +405,7 @@ pub trait FileSystemContext {
         _file_context: Self::FileContext,
         _buffer: &mut [u8],
     ) -> Result<usize, NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Get directory information for a single file or directory within a parent
@@ -298,7 +415,7 @@ pub trait FileSystemContext {
         _file_context: Self::FileContext,
         _file_name: &U16CStr,
     ) -> Result<FileInfo, NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Process control code.
@@ -309,22 +426,24 @@ pub trait FileSystemContext {
         _input_buffer: &[u8],
         _output_buffer: &mut [u8],
     ) -> Result<usize, NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Set the file delete flag.
+    ///
+    /// Note: `FileSystemContext::set_delete` takes precedence over `FileSystemContext::can_delete`
     fn set_delete(
         &self,
         _file_context: Self::FileContext,
         _file_name: &U16CStr,
         _delete_file: bool,
     ) -> Result<(), NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Get extended attributes.
     fn get_ea(&self, _file_context: Self::FileContext, _buffer: &[u8]) -> Result<usize, NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Set extended attributes.
@@ -333,30 +452,38 @@ pub trait FileSystemContext {
         _file_context: Self::FileContext,
         _buffer: &[u8],
     ) -> Result<FileInfo, NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
+    }
+
+    fn dispatcher_stopped(&self, _normally: bool) {
+        unreachable!("To be used, trait method must be overwritten !");
     }
 
     /// Get reparse point given a file name.
+    ///
+    /// This method is used as a callback parameter to `FspFileSystemFindReparsePoint` &
+    /// `FspFileSystemResolveReparsePoints` helpers to respectively implement
+    /// `FSP_FILE_SYSTEM_INTERFACE`'s `GetSecurityByName` & `ResolveReparsePoints`.
     fn get_reparse_point_by_name(
         &self,
         _file_name: &U16CStr,
         _is_directory: bool,
         _buffer: Option<&mut [u8]>,
     ) -> Result<usize, NTSTATUS> {
-        Err(STATUS_NOT_IMPLEMENTED)
+        unreachable!("To be used, trait method must be overwritten !");
     }
-
-    fn dispatcher_stopped(&self, _normally: bool) {}
 }
 
-pub(crate) struct Interface;
+/// `TrampolineInterface` fills the gap between the high level `FileSystemInterface`
+/// and the `FSP_FILE_SYSTEM_INTERFACE` C struct that WinFSP expects from us.
+pub(crate) struct TrampolineInterface;
 
-impl Interface {
+impl TrampolineInterface {
     /// Get volume information.
     /// - FileSystem - The file system on which this request is posted.
     /// - VolumeInfo - [out] Pointer to a structure that will receive the volume
     ///   information on successful return from this call.
-    unsafe extern "C" fn get_volume_info_ext<C: FileSystemContext>(
+    unsafe extern "C" fn get_volume_info_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         volume_info: *mut FSP_FSCTL_VOLUME_INFO,
     ) -> NTSTATUS {
@@ -376,7 +503,7 @@ impl Interface {
     /// - VolumeLabel - The new label for the volume.
     /// - VolumeInfo - [out] Pointer to a structure that will receive the volume
     ///   information on successful return from this call.
-    unsafe extern "C" fn set_volume_label_w_ext<C: FileSystemContext>(
+    unsafe extern "C" fn set_volume_label_w_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         volume_label: PWSTR,
         volume_info: *mut FSP_FSCTL_VOLUME_INFO,
@@ -413,7 +540,7 @@ impl Interface {
     /// Remarks: STATUS_REPARSE should be returned by file systems that support
     /// reparse points when they encounter a FileName that contains reparse points
     /// anywhere but the final path component.
-    unsafe extern "C" fn get_security_by_name_ext<C: FileSystemContext>(
+    unsafe extern "C" fn get_security_by_name_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_name: PWSTR,
         p_file_attributes: PUINT32,
@@ -494,7 +621,7 @@ impl Interface {
     /// - FileInfo - [out] Pointer to a structure that will receive the file
     ///   information on successful return from this call. This information
     ///   includes file attributes, file times, etc.
-    unsafe extern "C" fn open_ext<C: FileSystemContext>(
+    unsafe extern "C" fn open_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_name: PWSTR,
         create_options: UINT32,
@@ -527,7 +654,7 @@ impl Interface {
     ///   Delete is requested.
     /// - Flags - These flags determine whether the file was modified and whether
     ///   to delete the file.
-    unsafe extern "C" fn cleanup_ext<C: FileSystemContext>(
+    unsafe extern "C" fn cleanup_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         file_name: PWSTR,
@@ -548,7 +675,7 @@ impl Interface {
     /// Close a file.
     /// - FileSystem - The file system on which this request is posted.
     /// - FileContext - The file context of the file or directory to be closed.
-    unsafe extern "C" fn close_ext<C: FileSystemContext>(
+    unsafe extern "C" fn close_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
     ) {
@@ -566,7 +693,7 @@ impl Interface {
     /// - Length - Length of data to read.
     /// - PBytesTransferred - [out] Pointer to a memory location that will receive
     ///   the actual number of bytes read.
-    unsafe extern "C" fn read_ext<C: FileSystemContext>(
+    unsafe extern "C" fn read_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         buffer: PVOID,
@@ -576,7 +703,11 @@ impl Interface {
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
         let fctx = C::FileContext::access(file_context);
-        let buffer = std::slice::from_raw_parts_mut(buffer.cast(), length as usize);
+        let buffer = if !buffer.is_null() {
+            std::slice::from_raw_parts_mut(buffer.cast(), length as usize)
+        } else {
+            &mut []
+        };
 
         match C::read(fs, fctx, buffer, offset) {
             Ok(bytes_transferred) => {
@@ -602,7 +733,7 @@ impl Interface {
     /// - FileInfo - [out] Pointer to a structure that will receive the file
     ///   information on successful return from this call. This information
     ///   includes file attributes, file times, etc.
-    unsafe extern "C" fn write_ext<C: FileSystemContext>(
+    unsafe extern "C" fn write_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         buffer: PVOID,
@@ -615,7 +746,11 @@ impl Interface {
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
         let fctx = C::FileContext::access(file_context);
-        let buffer = std::slice::from_raw_parts(buffer.cast(), length as usize);
+        let buffer = if !buffer.is_null() {
+            std::slice::from_raw_parts(buffer.cast(), length as usize)
+        } else {
+            &[]
+        };
 
         let mode = match (write_to_end_of_file != 0, constrained_io != 0) {
             (false, false) => WriteMode::Normal { offset },
@@ -645,7 +780,7 @@ impl Interface {
     ///   information on successful return from this call. This information
     ///   includes file attributes, file times, etc. Used when flushing file (not
     ///   volume).
-    unsafe extern "C" fn flush_ext<C: FileSystemContext>(
+    unsafe extern "C" fn flush_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         file_info: *mut FSP_FSCTL_FILE_INFO,
@@ -669,7 +804,7 @@ impl Interface {
     /// - FileInfo - [out] Pointer to a structure that will receive the file
     ///   information on successful return from this call. This information
     ///   includes file attributes, file times, etc.
-    unsafe extern "C" fn get_file_info_ext<C: FileSystemContext>(
+    unsafe extern "C" fn get_file_info_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         file_info: *mut FSP_FSCTL_FILE_INFO,
@@ -704,7 +839,7 @@ impl Interface {
     /// - FileInfo - [out] Pointer to a structure that will receive the file
     ///   information on successful return from this call. This information
     ///   includes file attributes, file times, etc.
-    unsafe extern "C" fn set_basic_info_ext<C: FileSystemContext>(
+    unsafe extern "C" fn set_basic_info_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         file_attributes: UINT32,
@@ -744,7 +879,7 @@ impl Interface {
     /// - FileInfo - [out] Pointer to a structure that will receive the file
     ///   information on successful return from this call. This information
     ///   includes file attributes, file times, etc.
-    unsafe extern "C" fn set_file_size_ext<C: FileSystemContext>(
+    unsafe extern "C" fn set_file_size_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         new_size: UINT64,
@@ -770,7 +905,7 @@ impl Interface {
     ///   Delete is requested.
     /// - Flags - These flags determine whether the file was modified and whether
     ///   to delete the file.
-    unsafe extern "C" fn can_delete_ext<C: FileSystemContext>(
+    unsafe extern "C" fn can_delete_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         file_name: PWSTR,
@@ -792,7 +927,7 @@ impl Interface {
     /// - NewFileName - The new name for the file or directory.
     /// - ReplaceIfExists - Whether to replace a file that already exists at
     ///   NewFileName.
-    unsafe extern "C" fn rename_ext<C: FileSystemContext>(
+    unsafe extern "C" fn rename_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         file_name: PWSTR,
@@ -820,7 +955,7 @@ impl Interface {
     ///   buffer size. On input it contains the size of the security descriptor
     ///   buffer. On output it will contain the actual size of the security
     ///   descriptor copied into the security descriptor buffer. Cannot be NULL.
-    unsafe extern "C" fn get_security_ext<C: FileSystemContext>(
+    unsafe extern "C" fn get_security_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         security_descriptor: PSECURITY_DESCRIPTOR,
@@ -855,7 +990,7 @@ impl Interface {
     ///   security descriptor should be modified.
     /// - ModificationDescriptor - Describes the modifications to apply to the file
     ///   or directory security descriptor.
-    unsafe extern "C" fn set_security_ext<C: FileSystemContext>(
+    unsafe extern "C" fn set_security_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         security_information: SECURITY_INFORMATION,
@@ -887,7 +1022,7 @@ impl Interface {
     /// - Length - Length of data to read.
     /// - PBytesTransferred - [out] Pointer to a memory location that will receive
     ///   the actual number of bytes read.
-    unsafe extern "C" fn read_directory_ext<C: FileSystemContext>(
+    unsafe extern "C" fn read_directory_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         _pattern: PWSTR,
@@ -936,7 +1071,7 @@ impl Interface {
         }
     }
 
-    unsafe extern "C" fn get_reparse_point_by_name_ext<C: FileSystemContext>(
+    unsafe extern "C" fn get_reparse_point_by_name_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         _context: PVOID,
         file_name: PWSTR,
@@ -946,13 +1081,13 @@ impl Interface {
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
         let file_name = U16CStr::from_ptr_str_mut(file_name);
-        let buffer = if buffer.is_null() {
-            None
-        } else {
+        let buffer = if !buffer.is_null() {
             Some(std::slice::from_raw_parts_mut(
                 buffer.cast(),
                 psize.read() as usize,
             ))
+        } else {
+            None
         };
 
         match C::get_reparse_point_by_name(fs, file_name, is_directory != 0, buffer) {
@@ -982,7 +1117,7 @@ impl Interface {
     /// - PSize - [in,out] Pointer to the buffer size. On input it contains the
     ///   size of the buffer. On output it will contain the actual size of data
     ///   copied.
-    unsafe extern "C" fn resolve_reparse_points_ext<C: FileSystemContext>(
+    unsafe extern "C" fn resolve_reparse_points_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_name: PWSTR,
         reparse_point_index: UINT32,
@@ -1014,7 +1149,7 @@ impl Interface {
     /// - PSize - [in,out] Pointer to the buffer size. On input it contains the
     ///   size of the buffer. On output it will contain the actual size of data
     ///   copied.
-    unsafe extern "C" fn get_reparse_point_ext<C: FileSystemContext>(
+    unsafe extern "C" fn get_reparse_point_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         file_name: PWSTR,
@@ -1024,7 +1159,11 @@ impl Interface {
         let fs = &*(*file_system).UserContext.cast::<C>();
         let fctx = C::FileContext::access(file_context);
         let file_name = U16CStr::from_ptr_str(file_name);
-        let buffer = std::slice::from_raw_parts_mut(buffer.cast(), *p_size as usize);
+        let buffer = if !buffer.is_null() {
+            std::slice::from_raw_parts_mut(buffer.cast(), *p_size as usize)
+        } else {
+            &mut []
+        };
 
         match C::get_reparse_point(fs, fctx, file_name, buffer) {
             Ok(byte_transferred) => {
@@ -1043,7 +1182,7 @@ impl Interface {
     ///   If this buffer contains a symbolic link path, it should not be assumed to
     ///   be NULL terminated.
     /// - Size - Size of data to write.
-    unsafe extern "C" fn set_reparse_point_ext<C: FileSystemContext>(
+    unsafe extern "C" fn set_reparse_point_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         file_name: PWSTR,
@@ -1053,7 +1192,11 @@ impl Interface {
         let fs = &*(*file_system).UserContext.cast::<C>();
         let fctx = C::FileContext::access(file_context);
         let file_name = U16CStr::from_ptr_str(file_name);
-        let buffer = std::slice::from_raw_parts_mut(buffer.cast(), size as usize);
+        let buffer = if !buffer.is_null() {
+            std::slice::from_raw_parts_mut(buffer.cast(), size as usize)
+        } else {
+            &mut []
+        };
 
         match C::set_reparse_point(fs, fctx, file_name, buffer) {
             Ok(()) => STATUS_SUCCESS,
@@ -1067,7 +1210,7 @@ impl Interface {
     /// - FileName - The file name of the reparse point.
     /// - Buffer - Pointer to a buffer that contains the data for this operation.
     /// - Size - Size of data to write.
-    unsafe extern "C" fn delete_reparse_point_ext<C: FileSystemContext>(
+    unsafe extern "C" fn delete_reparse_point_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         file_name: PWSTR,
@@ -1077,7 +1220,11 @@ impl Interface {
         let fs = &*(*file_system).UserContext.cast::<C>();
         let fctx = C::FileContext::access(file_context);
         let file_name = U16CStr::from_ptr_str(file_name);
-        let buffer = std::slice::from_raw_parts_mut(buffer.cast(), size as usize);
+        let buffer = if !buffer.is_null() {
+            std::slice::from_raw_parts_mut(buffer.cast(), size as usize)
+        } else {
+            &mut []
+        };
 
         match C::delete_reparse_point(fs, fctx, file_name, buffer) {
             Ok(()) => STATUS_SUCCESS,
@@ -1093,7 +1240,7 @@ impl Interface {
     /// - Length - Length of buffer.
     /// - PBytesTransferred - [out] Pointer to a memory location that will receive
     ///   the actual number of bytes stored.
-    unsafe extern "C" fn get_stream_info_ext<C: FileSystemContext>(
+    unsafe extern "C" fn get_stream_info_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         buffer: PVOID,
@@ -1102,7 +1249,11 @@ impl Interface {
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
         let fctx = C::FileContext::access(file_context);
-        let buffer = std::slice::from_raw_parts_mut(buffer.cast(), length as usize);
+        let buffer = if !buffer.is_null() {
+            std::slice::from_raw_parts_mut(buffer.cast(), length as usize)
+        } else {
+            &mut []
+        };
 
         match C::get_stream_info(fs, fctx, buffer) {
             Ok(bytes_transferred) => {
@@ -1122,7 +1273,7 @@ impl Interface {
     /// - DirInfo - [out] Pointer to a structure that will receive the directory
     ///   information on successful return from this call. This information
     ///   includes the file name, but also file attributes, file times, etc.
-    unsafe extern "C" fn get_dir_info_by_name_ext<C: FileSystemContext>(
+    unsafe extern "C" fn get_dir_info_by_name_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         file_name: PWSTR,
@@ -1160,7 +1311,7 @@ impl Interface {
     /// - OutputBufferLength - Output data length.
     /// - PBytesTransferred - [out] Pointer to a memory location that will receive
     ///   the actual number of bytes transferred.
-    unsafe extern "C" fn control_ext<C: FileSystemContext>(
+    unsafe extern "C" fn control_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         control_code: UINT32,
@@ -1172,9 +1323,16 @@ impl Interface {
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
         let fctx = C::FileContext::access(file_context);
-        let input = std::slice::from_raw_parts(input_buffer.cast(), input_buffer_length as usize);
-        let output =
-            std::slice::from_raw_parts_mut(output_buffer.cast(), output_buffer_length as usize);
+        let input = if !input_buffer.is_null() {
+            std::slice::from_raw_parts(input_buffer.cast(), input_buffer_length as usize)
+        } else {
+            &[]
+        };
+        let output = if !output_buffer.is_null() {
+            std::slice::from_raw_parts_mut(output_buffer.cast(), output_buffer_length as usize)
+        } else {
+            &mut []
+        };
 
         match C::control(fs, fctx, control_code, input, output) {
             Ok(bytes_transferred) => {
@@ -1194,7 +1352,7 @@ impl Interface {
     ///   deleted on Cleanup; otherwise it will not be deleted. It is legal to
     ///   receive multiple SetDelete calls for the same file with different
     ///   DeleteFile parameters.
-    unsafe extern "C" fn set_delete_ext<C: FileSystemContext>(
+    unsafe extern "C" fn set_delete_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         file_name: PWSTR,
@@ -1233,6 +1391,69 @@ impl Interface {
     ///   self-relative format. Its length can be retrieved using the Windows
     ///   GetSecurityDescriptorLength API. Will be NULL for named streams.
     /// - AllocationSize - Allocation size for the newly created file.
+    /// - PFileContext - [out] Pointer that will receive the file context on
+    ///   successful return from this call.
+    /// - FileInfo - [out] Pointer to a structure that will receive the file
+    ///   information on successful return from this call. This information
+    ///   includes file attributes, file times, etc.
+    unsafe extern "C" fn create_ext<C: FileSystemInterface>(
+        file_system: *mut FSP_FILE_SYSTEM,
+        file_name: PWSTR,
+        create_options: UINT32,
+        granted_access: UINT32,
+        file_attributes: UINT32,
+        security_descriptor: PSECURITY_DESCRIPTOR,
+        allocation_size: UINT64,
+        p_file_context: *mut PVOID,
+        file_info: *mut FSP_FSCTL_FILE_INFO,
+    ) -> NTSTATUS {
+        let fs = &*(*file_system).UserContext.cast::<C>();
+        let file_name = U16CStr::from_ptr_str(file_name);
+        let sd = SecurityDescriptor::from_ptr(security_descriptor);
+
+        match C::create(
+            fs,
+            file_name,
+            CreateFileInfo {
+                create_options: CreateOptions(create_options),
+                granted_access: FileAccessRights(granted_access),
+                file_attributes: FileAttributes(file_attributes),
+                allocation_size,
+            },
+            sd,
+        ) {
+            Ok((fctx, finfo)) => {
+                C::FileContext::write(fctx, p_file_context);
+                *file_info = finfo.0;
+                STATUS_SUCCESS
+            }
+            Err(e) => e,
+        }
+    }
+
+    /// Create new file or directory.
+    /// - FileSystem - The file system on which this request is posted.
+    /// - FileName - The name of the file or directory to be created.
+    /// - CreateOptions - Create options for this request. This parameter has the
+    ///   same meaning as the CreateOptions parameter of the NtCreateFile API. User
+    ///   mode file systems should typically only be concerned with the flag
+    ///   FILE_DIRECTORY_FILE, which is an instruction to create a directory rather
+    ///   than a file. Some file systems may also want to pay attention to the
+    ///   FILE_NO_INTERMEDIATE_BUFFERING and FILE_WRITE_THROUGH flags, although
+    ///   these are typically handled by the FSD component.
+    /// - GrantedAccess - Determines the specific access rights that have been
+    ///   granted for this request. Upon receiving this call all access checks have
+    ///   been performed and the user mode file system need not perform any
+    ///   additional checks. However this parameter may be useful to a user mode
+    ///   file system; for example the WinFsp-FUSE layer uses this parameter to
+    ///   determine which flags to use in its POSIX open() call.
+    /// - FileAttributes - File attributes to apply to the newly created file or
+    ///   directory.
+    /// - SecurityDescriptor - Security descriptor to apply to the newly created
+    ///   file or directory. This security descriptor will always be in
+    ///   self-relative format. Its length can be retrieved using the Windows
+    ///   GetSecurityDescriptorLength API. Will be NULL for named streams.
+    /// - AllocationSize - Allocation size for the newly created file.
     /// - ExtraBuffer - Extended attributes or reparse point buffer.
     /// - ExtraLength - Extended attributes or reparse point buffer length.
     /// - ExtraBufferIsReparsePoint - FALSE: extra buffer is extended attributes;
@@ -1242,7 +1463,7 @@ impl Interface {
     /// - FileInfo - [out] Pointer to a structure that will receive the file
     ///   information on successful return from this call. This information
     ///   includes file attributes, file times, etc.
-    unsafe extern "C" fn create_ex_ext<C: FileSystemContext>(
+    unsafe extern "C" fn create_ex_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_name: PWSTR,
         create_options: UINT32,
@@ -1259,7 +1480,11 @@ impl Interface {
         let fs = &*(*file_system).UserContext.cast::<C>();
         let file_name = U16CStr::from_ptr_str(file_name);
         let sd = SecurityDescriptor::from_ptr(security_descriptor);
-        let buffer = std::slice::from_raw_parts(extra_buffer.cast(), extra_length as usize);
+        let buffer = if !extra_buffer.is_null() {
+            std::slice::from_raw_parts(extra_buffer.cast(), extra_length as usize)
+        } else {
+            &[]
+        };
 
         match C::create_ex(
             fs,
@@ -1291,12 +1516,49 @@ impl Interface {
     ///   replaced with the new ones. When FALSE the existing file attributes
     ///   should be merged (or'ed) with the new ones.
     /// - AllocationSize - Allocation size for the overwritten file.
+    /// - FileInfo - [out] Pointer to a structure that will receive the file
+    ///   information on successful return from this call. This information
+    ///   includes file attributes, file times, etc.
+    unsafe extern "C" fn overwrite_ext<C: FileSystemInterface>(
+        file_system: *mut FSP_FILE_SYSTEM,
+        file_context: PVOID,
+        file_attributes: UINT32,
+        replace_file_attributes: BOOLEAN,
+        allocation_size: UINT64,
+        file_info: *mut FSP_FSCTL_FILE_INFO,
+    ) -> NTSTATUS {
+        let fs = &*(*file_system).UserContext.cast::<C>();
+        let fctx = C::FileContext::access(file_context);
+
+        match C::overwrite(
+            fs,
+            fctx,
+            FileAttributes(file_attributes),
+            replace_file_attributes != 0,
+            allocation_size,
+        ) {
+            Ok(finfo) => {
+                *file_info = finfo.0;
+                STATUS_SUCCESS
+            }
+            Err(e) => e,
+        }
+    }
+
+    /// Overwrite a file.
+    /// - FileSystem - The file system on which this request is posted.
+    /// - FileContext - The file context of the file to overwrite.
+    /// - FileAttributes - File attributes to apply to the overwritten file.
+    /// - ReplaceFileAttributes - When TRUE the existing file attributes should be
+    ///   replaced with the new ones. When FALSE the existing file attributes
+    ///   should be merged (or'ed) with the new ones.
+    /// - AllocationSize - Allocation size for the overwritten file.
     /// - Ea - Extended attributes buffer.
     /// - EaLength - Extended attributes buffer length.
     /// - FileInfo - [out] Pointer to a structure that will receive the file
     ///   information on successful return from this call. This information
     ///   includes file attributes, file times, etc.
-    unsafe extern "C" fn overwrite_ex_ext<C: FileSystemContext>(
+    unsafe extern "C" fn overwrite_ex_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         file_attributes: UINT32,
@@ -1308,7 +1570,11 @@ impl Interface {
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
         let fctx = C::FileContext::access(file_context);
-        let buffer = std::slice::from_raw_parts(ea.cast(), ea_length as usize);
+        let buffer = if !ea.is_null() {
+            std::slice::from_raw_parts(ea.cast(), ea_length as usize)
+        } else {
+            &[]
+        };
 
         match C::overwrite_ex(
             fs,
@@ -1334,7 +1600,7 @@ impl Interface {
     /// - EaLength - Extended attributes buffer length.
     /// - PBytesTransferred - [out] Pointer to a memory location that will receive
     ///   the actual number of bytes transferred.
-    unsafe extern "C" fn get_ea_ext<C: FileSystemContext>(
+    unsafe extern "C" fn get_ea_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         ea: PFILE_FULL_EA_INFORMATION,
@@ -1343,7 +1609,11 @@ impl Interface {
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
         let fctx = C::FileContext::access(file_context);
-        let buffer = std::slice::from_raw_parts(ea.cast(), ea_length as usize);
+        let buffer = if !ea.is_null() {
+            std::slice::from_raw_parts(ea.cast(), ea_length as usize)
+        } else {
+            &[]
+        };
 
         match C::get_ea(fs, fctx, buffer) {
             Ok(bytes_transfered) => {
@@ -1363,7 +1633,7 @@ impl Interface {
     /// - FileInfo - [out] Pointer to a structure that will receive the file
     ///   information on successful return from this call. This information
     ///   includes file attributes, file times, etc.
-    unsafe extern "C" fn set_ea_ext<C: FileSystemContext>(
+    unsafe extern "C" fn set_ea_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         file_context: PVOID,
         ea: PFILE_FULL_EA_INFORMATION,
@@ -1372,7 +1642,11 @@ impl Interface {
     ) -> NTSTATUS {
         let fs = &*(*file_system).UserContext.cast::<C>();
         let fctx = C::FileContext::access(file_context);
-        let buffer = std::slice::from_raw_parts(ea.cast(), ea_length as usize);
+        let buffer = if !ea.is_null() {
+            std::slice::from_raw_parts(ea.cast(), ea_length as usize)
+        } else {
+            &[]
+        };
 
         match C::set_ea(fs, fctx, buffer) {
             Ok(info) => {
@@ -1383,7 +1657,7 @@ impl Interface {
         }
     }
 
-    unsafe extern "C" fn dispatcher_stopped_ext<C: FileSystemContext>(
+    unsafe extern "C" fn dispatcher_stopped_ext<C: FileSystemInterface>(
         file_system: *mut FSP_FILE_SYSTEM,
         normally: BOOLEAN,
     ) {
@@ -1394,43 +1668,76 @@ impl Interface {
         FspFileSystemStopServiceIfNecessary(file_system, normally)
     }
 
-    pub(crate) fn interface<Ctx: FileSystemContext>() -> FSP_FILE_SYSTEM_INTERFACE {
-        let mut fsp_interface = FSP_FILE_SYSTEM_INTERFACE {
-            CanDelete: Some(Self::can_delete_ext::<Ctx>),
-            Cleanup: Some(Self::cleanup_ext::<Ctx>),
-            Close: Some(Self::close_ext::<Ctx>),
-            Control: Some(Self::control_ext::<Ctx>),
-            CreateEx: Some(Self::create_ex_ext::<Ctx>),
-            DeleteReparsePoint: Some(Self::delete_reparse_point_ext::<Ctx>),
-            DispatcherStopped: Some(Self::dispatcher_stopped_ext::<Ctx>),
-            Flush: Some(Self::flush_ext::<Ctx>),
-            GetDirInfoByName: Some(Self::get_dir_info_by_name_ext::<Ctx>),
-            GetEa: Some(Self::get_ea_ext::<Ctx>),
-            GetFileInfo: Some(Self::get_file_info_ext::<Ctx>),
-            GetReparsePoint: Some(Self::get_reparse_point_ext::<Ctx>),
-            GetSecurity: Some(Self::get_security_ext::<Ctx>),
-            GetSecurityByName: Some(Self::get_security_by_name_ext::<Ctx>),
-            GetStreamInfo: Some(Self::get_stream_info_ext::<Ctx>),
-            GetVolumeInfo: Some(Self::get_volume_info_ext::<Ctx>),
-            Open: Some(Self::open_ext::<Ctx>),
-            OverwriteEx: Some(Self::overwrite_ex_ext::<Ctx>),
-            Read: Some(Self::read_ext::<Ctx>),
-            ReadDirectory: Some(Self::read_directory_ext::<Ctx>),
-            Rename: Some(Self::rename_ext::<Ctx>),
-            ResolveReparsePoints: Some(Self::resolve_reparse_points_ext::<Ctx>),
-            SetBasicInfo: Some(Self::set_basic_info_ext::<Ctx>),
-            SetDelete: None,
-            SetEa: Some(Self::set_ea_ext::<Ctx>),
-            SetFileSize: Some(Self::set_file_size_ext::<Ctx>),
-            SetReparsePoint: Some(Self::set_reparse_point_ext::<Ctx>),
-            SetSecurity: Some(Self::set_security_ext::<Ctx>),
-            SetVolumeLabelW: Some(Self::set_volume_label_w_ext::<Ctx>),
-            Write: Some(Self::write_ext::<Ctx>),
-            ..Default::default()
-        };
-        if Ctx::SET_DELETE_DEFINED {
-            fsp_interface.SetDelete = Some(Self::set_delete_ext::<Ctx>);
+    pub(crate) fn interface<Ctx: FileSystemInterface>() -> FSP_FILE_SYSTEM_INTERFACE {
+        macro_rules! set_fn_pointer_or_null {
+            ($flag_name:ident, $fn_ext_name:ident) => {
+                if Ctx::$flag_name {
+                    Some(Self::$fn_ext_name::<Ctx>)
+                } else {
+                    None
+                }
+            };
         }
-        fsp_interface
+
+        FSP_FILE_SYSTEM_INTERFACE {
+            GetVolumeInfo: set_fn_pointer_or_null!(GET_VOLUME_INFO_DEFINED, get_volume_info_ext),
+            SetVolumeLabelW: set_fn_pointer_or_null!(
+                SET_VOLUME_LABEL_DEFINED,
+                set_volume_label_w_ext
+            ),
+            GetSecurityByName: set_fn_pointer_or_null!(
+                GET_SECURITY_BY_NAME_DEFINED,
+                get_security_by_name_ext
+            ),
+            Create: set_fn_pointer_or_null!(CREATE_DEFINED, create_ext),
+            CreateEx: set_fn_pointer_or_null!(CREATE_EX_DEFINED, create_ex_ext),
+            Open: set_fn_pointer_or_null!(OPEN_DEFINED, open_ext),
+            Overwrite: set_fn_pointer_or_null!(OVERWRITE_DEFINED, overwrite_ext),
+            OverwriteEx: set_fn_pointer_or_null!(OVERWRITE_EX_DEFINED, overwrite_ex_ext),
+            Cleanup: set_fn_pointer_or_null!(CLEANUP_DEFINED, cleanup_ext),
+            Close: set_fn_pointer_or_null!(CLOSE_DEFINED, close_ext),
+            Read: set_fn_pointer_or_null!(READ_DEFINED, read_ext),
+            Write: set_fn_pointer_or_null!(WRITE_DEFINED, write_ext),
+            Flush: set_fn_pointer_or_null!(FLUSH_DEFINED, flush_ext),
+            GetFileInfo: set_fn_pointer_or_null!(GET_FILE_INFO_DEFINED, get_file_info_ext),
+            SetBasicInfo: set_fn_pointer_or_null!(SET_BASIC_INFO_DEFINED, set_basic_info_ext),
+            SetFileSize: set_fn_pointer_or_null!(SET_FILE_SIZE_DEFINED, set_file_size_ext),
+            CanDelete: set_fn_pointer_or_null!(CAN_DELETE_DEFINED, can_delete_ext),
+            Rename: set_fn_pointer_or_null!(RENAME_DEFINED, rename_ext),
+            GetSecurity: set_fn_pointer_or_null!(GET_SECURITY_DEFINED, get_security_ext),
+            SetSecurity: set_fn_pointer_or_null!(SET_SECURITY_DEFINED, set_security_ext),
+            ReadDirectory: set_fn_pointer_or_null!(READ_DIRECTORY_DEFINED, read_directory_ext),
+            GetReparsePoint: set_fn_pointer_or_null!(
+                GET_REPARSE_POINT_DEFINED,
+                get_reparse_point_ext
+            ),
+            SetReparsePoint: set_fn_pointer_or_null!(
+                SET_REPARSE_POINT_DEFINED,
+                set_reparse_point_ext
+            ),
+            DeleteReparsePoint: set_fn_pointer_or_null!(
+                DELETE_REPARSE_POINT_DEFINED,
+                delete_reparse_point_ext
+            ),
+            GetStreamInfo: set_fn_pointer_or_null!(GET_STREAM_INFO_DEFINED, get_stream_info_ext),
+            GetDirInfoByName: set_fn_pointer_or_null!(
+                GET_DIR_INFO_BY_NAME_DEFINED,
+                get_dir_info_by_name_ext
+            ),
+            Control: set_fn_pointer_or_null!(CONTROL_DEFINED, control_ext),
+            SetDelete: set_fn_pointer_or_null!(SET_DELETE_DEFINED, set_delete_ext),
+            GetEa: set_fn_pointer_or_null!(GET_EA_DEFINED, get_ea_ext),
+            SetEa: set_fn_pointer_or_null!(SET_EA_DEFINED, set_ea_ext),
+            DispatcherStopped: set_fn_pointer_or_null!(
+                DISPATCHER_STOPPED_DEFINED,
+                dispatcher_stopped_ext
+            ),
+            ResolveReparsePoints: set_fn_pointer_or_null!(
+                RESOLVE_REPARSE_POINTS_DEFINED,
+                resolve_reparse_points_ext
+            ),
+
+            ..Default::default() // Initializing `Obsolete0` & `Reserved` fields
+        }
     }
 }

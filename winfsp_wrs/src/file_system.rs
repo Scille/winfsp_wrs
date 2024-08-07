@@ -20,7 +20,7 @@ use winfsp_wrs_sys::{
     FSP_FSCTL_VOLUME_PARAMS, NTSTATUS,
 };
 
-use crate::{FileContextKind, FileSystemContext, Interface};
+use crate::{FileContextKind, FileSystemInterface, TrampolineInterface};
 
 #[cfg(feature = "icon")]
 use crate::{FileAccessRights, FileAttributes, FileCreationDisposition, FileShareMode};
@@ -317,7 +317,7 @@ pub struct Params {
 }
 
 #[derive(Debug, Clone)]
-pub struct FileSystem<Ctx: FileSystemContext> {
+pub struct FileSystem<Ctx: FileSystemInterface> {
     // FileSystem inner value
     inner: FSP_FILE_SYSTEM,
     pub params: Params,
@@ -327,9 +327,9 @@ pub struct FileSystem<Ctx: FileSystemContext> {
 // SAFETY: FSP_FILE_SYSTEM contains `*mut c_void` pointers that cannot be send between threads
 // by default. However this structure is only used by WinFSP (and not exposed to the user) which
 // is deep in C++ land where Rust safety rules do not apply.
-unsafe impl<Ctx: FileSystemContext> Send for FileSystem<Ctx> {}
+unsafe impl<Ctx: FileSystemInterface> Send for FileSystem<Ctx> {}
 
-impl<Ctx: FileSystemContext> FileSystem<Ctx> {
+impl<Ctx: FileSystemInterface> FileSystem<Ctx> {
     pub fn volume_params(&self) -> &VolumeParams {
         &self.params.volume_params
     }
@@ -353,7 +353,7 @@ impl<Ctx: FileSystemContext> FileSystem<Ctx> {
     ) -> Result<Self, NTSTATUS> {
         unsafe {
             let mut p_inner = std::ptr::null_mut();
-            let interface = Box::into_raw(Box::new(Interface::interface::<Ctx>()));
+            let interface = Box::into_raw(Box::new(TrampolineInterface::interface::<Ctx>()));
 
             params
                 .volume_params

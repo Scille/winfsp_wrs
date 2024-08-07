@@ -6,11 +6,11 @@ use std::{
 };
 use winfsp_wrs::{
     filetime_now, u16cstr, u16str, CleanupFlags, CreateFileInfo, CreateOptions, DirInfo,
-    FileAccessRights, FileAttributes, FileInfo, FileSystem, FileSystemContext, PSecurityDescriptor,
-    Params, SecurityDescriptor, U16CStr, U16CString, U16Str, VolumeInfo, VolumeParams, WriteMode,
-    NTSTATUS, STATUS_ACCESS_DENIED, STATUS_DIRECTORY_NOT_EMPTY, STATUS_END_OF_FILE,
-    STATUS_MEDIA_WRITE_PROTECTED, STATUS_NOT_A_DIRECTORY, STATUS_OBJECT_NAME_COLLISION,
-    STATUS_OBJECT_NAME_NOT_FOUND,
+    FileAccessRights, FileAttributes, FileInfo, FileSystem, FileSystemInterface,
+    PSecurityDescriptor, Params, SecurityDescriptor, U16CStr, U16CString, U16Str, VolumeInfo,
+    VolumeParams, WriteMode, NTSTATUS, STATUS_ACCESS_DENIED, STATUS_DIRECTORY_NOT_EMPTY,
+    STATUS_END_OF_FILE, STATUS_MEDIA_WRITE_PROTECTED, STATUS_NOT_A_DIRECTORY,
+    STATUS_OBJECT_NAME_COLLISION, STATUS_OBJECT_NAME_NOT_FOUND,
 };
 
 macro_rules! debug {
@@ -246,17 +246,17 @@ impl MemFs {
     }
 }
 
-impl FileSystemContext for MemFs {
+impl FileSystemInterface for MemFs {
     type FileContext = Arc<Mutex<Obj>>;
 
-    const SET_DELETE_DEFINED: bool = true;
-
+    const GET_VOLUME_INFO_DEFINED: bool = true;
     fn get_volume_info(&self) -> Result<VolumeInfo, NTSTATUS> {
         debug!("get_volume_info()");
 
         Ok(self.volume_info.lock().unwrap().clone())
     }
 
+    const SET_VOLUME_LABEL_DEFINED: bool = true;
     fn set_volume_label(&self, volume_label: &U16CStr) -> Result<VolumeInfo, NTSTATUS> {
         debug!("set_volume_label(volume_label: {:?})", volume_label);
 
@@ -269,6 +269,7 @@ impl FileSystemContext for MemFs {
         Ok(guard.clone())
     }
 
+    const GET_SECURITY_BY_NAME_DEFINED: bool = true;
     fn get_security_by_name(
         &self,
         file_name: &U16CStr,
@@ -298,6 +299,7 @@ impl FileSystemContext for MemFs {
         }
     }
 
+    const CREATE_EX_DEFINED: bool = true;
     fn create_ex(
         &self,
         file_name: &U16CStr,
@@ -349,6 +351,7 @@ impl FileSystemContext for MemFs {
         Ok((file_context, file_info))
     }
 
+    const OPEN_DEFINED: bool = true;
     fn open(
         &self,
         file_name: &U16CStr,
@@ -372,6 +375,7 @@ impl FileSystemContext for MemFs {
         }
     }
 
+    const OVERWRITE_EX_DEFINED: bool = true;
     fn overwrite_ex(
         &self,
         file_context: Self::FileContext,
@@ -416,6 +420,7 @@ impl FileSystemContext for MemFs {
         self.get_file_info_from_obj(&fc)
     }
 
+    const CLEANUP_DEFINED: bool = true;
     fn cleanup(
         &self,
         file_context: Self::FileContext,
@@ -479,6 +484,7 @@ impl FileSystemContext for MemFs {
         }
     }
 
+    const READ_DEFINED: bool = true;
     fn read(
         &self,
         file_context: Self::FileContext,
@@ -505,6 +511,7 @@ impl FileSystemContext for MemFs {
         }
     }
 
+    const WRITE_DEFINED: bool = true;
     fn write(
         &self,
         file_context: Self::FileContext,
@@ -539,6 +546,7 @@ impl FileSystemContext for MemFs {
         Ok((written, self.get_file_info_from_obj(&fc)?))
     }
 
+    const FLUSH_DEFINED: bool = true;
     fn flush(&self, file_context: Self::FileContext) -> Result<FileInfo, NTSTATUS> {
         let fc = file_context.lock().unwrap();
         debug!("[WinFSP] flush(file_context: {:?})", fc);
@@ -546,6 +554,7 @@ impl FileSystemContext for MemFs {
         self.get_file_info_from_obj(&fc)
     }
 
+    const GET_FILE_INFO_DEFINED: bool = true;
     fn get_file_info(&self, file_context: Self::FileContext) -> Result<FileInfo, NTSTATUS> {
         let fc = file_context.lock().unwrap();
         debug!("[WinFSP] get_file_info(file_context: {:?})", fc);
@@ -556,6 +565,7 @@ impl FileSystemContext for MemFs {
         }
     }
 
+    const SET_BASIC_INFO_DEFINED: bool = true;
     fn set_basic_info(
         &self,
         file_context: Self::FileContext,
@@ -615,6 +625,7 @@ impl FileSystemContext for MemFs {
         self.get_file_info_from_obj(&fc)
     }
 
+    const SET_FILE_SIZE_DEFINED: bool = true;
     fn set_file_size(
         &self,
         file_context: Self::FileContext,
@@ -647,6 +658,7 @@ impl FileSystemContext for MemFs {
         self.get_file_info_from_obj(&fc)
     }
 
+    const RENAME_DEFINED: bool = true;
     fn rename(
         &self,
         file_context: Self::FileContext,
@@ -699,6 +711,7 @@ impl FileSystemContext for MemFs {
         Ok(())
     }
 
+    const GET_SECURITY_DEFINED: bool = true;
     fn get_security(
         &self,
         file_context: Self::FileContext,
@@ -712,6 +725,7 @@ impl FileSystemContext for MemFs {
         }
     }
 
+    const SET_SECURITY_DEFINED: bool = true;
     fn set_security(
         &self,
         file_context: Self::FileContext,
@@ -743,6 +757,7 @@ impl FileSystemContext for MemFs {
         Ok(())
     }
 
+    const READ_DIRECTORY_DEFINED: bool = true;
     fn read_directory(
         &self,
         file_context: Self::FileContext,
@@ -808,6 +823,7 @@ impl FileSystemContext for MemFs {
         }
     }
 
+    const SET_DELETE_DEFINED: bool = true;
     fn set_delete(
         &self,
         file_context: Self::FileContext,

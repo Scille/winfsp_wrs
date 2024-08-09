@@ -51,7 +51,7 @@ fn get_lplibfilename() -> Result<U16CString, InitError> {
 
     if cfg!(target_arch = "x86_64") {
         path.push("winfsp-x64.dll");
-    } else if cfg!(target_arch = "i686") {
+    } else if cfg!(target_arch = "x86") {
         path.push("winfsp-x86.dll");
     } else if cfg!(target_arch = "aarch64") {
         path.push("winfsp-a64.dll")

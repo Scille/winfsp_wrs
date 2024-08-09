@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use winfsp_wrs::{
     filetime_now, u16cstr, u16str, CreateOptions, DirInfo, FileAccessRights, FileAttributes,
-    FileInfo, FileSystem, FileSystemContext, PSecurityDescriptor, Params, SecurityDescriptor,
+    FileInfo, FileSystem, FileSystemInterface, PSecurityDescriptor, Params, SecurityDescriptor,
     U16CStr, U16Str, VolumeInfo, VolumeParams, NTSTATUS,
 };
 
@@ -48,9 +48,10 @@ impl MemFs {
     }
 }
 
-impl FileSystemContext for MemFs {
+impl FileSystemInterface for MemFs {
     type FileContext = Arc<Context>;
 
+    const GET_SECURITY_BY_NAME_DEFINED: bool = true;
     fn get_security_by_name(
         &self,
         _file_name: &U16CStr,
@@ -63,6 +64,7 @@ impl FileSystemContext for MemFs {
         ))
     }
 
+    const OPEN_DEFINED: bool = true;
     fn open(
         &self,
         _file_name: &U16CStr,
@@ -74,14 +76,17 @@ impl FileSystemContext for MemFs {
         Ok((file_context, file_info))
     }
 
+    const GET_FILE_INFO_DEFINED: bool = true;
     fn get_file_info(&self, _file_context: Self::FileContext) -> Result<FileInfo, NTSTATUS> {
         Ok(self.file_context.info)
     }
 
+    const GET_VOLUME_INFO_DEFINED: bool = true;
     fn get_volume_info(&self) -> Result<VolumeInfo, NTSTATUS> {
         Ok(self.volume_info.clone())
     }
 
+    const READ_DIRECTORY_DEFINED: bool = true;
     fn read_directory(
         &self,
         _file_context: Self::FileContext,

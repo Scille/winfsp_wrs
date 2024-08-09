@@ -1,3 +1,40 @@
+//! This module is mostly about implementing the `FileSystemInterface` trait.
+//!
+//! The thing to consider here is we expose the `FileSystemInterface` trait as a high level
+//! construct in order to build a structure of pointer (the `FSP_FILE_SYSTEM_INTERFACE` WinFSP
+//! actually wants).
+//!
+//! However there is no 1-to-1 relationship between trait implementation and struct of pointers:
+//! a struct of pointer can have `NULL` pointers which is not possible to express when implementing
+//! a trait (I've tried some tricks with function pointer comparison, but it doesn't support
+//! methods with `foo: impl Type` parameter !)
+//!
+//! Hence why we ask the end user to both implement the methods he needs AND set corresponding
+//! `xxx_DEFINED` boolean (this way all methods with the boolean not set will be set as `NULL`
+//! in the struct of pointers).
+//!
+//! ## Bonus: Why do we provide a `unreachable!()` default implementation for each method in the trait  ?
+//!
+//! Providing no default implementation means the end user implementing this trait would
+//! have to implement all the methods.
+//!
+//! However most of the time, not all methods need to be implemented (see for instance
+//! the methods related to reparse points).
+//!
+//! In this case what should be the implementation of such method ?
+//!
+//! The obvious answer is "just implement with a unreachable and you're good to go !".
+//! However this has multiple drawbacks:
+//! - It is much more verbose
+//! - It feels very weird to define a method, but with a unreachable, so this method is not
+//!   really "defined" and hence the `xxx_DEFINED` boolean should not be set !
+//! - It is very tempting to implement those methods by returning a `NTSTATUS`
+//!   `STATUS_NOT_IMPLEMENTED`... which cause very hard to track bugs ! (This used to be
+//!   how winfsp_wrs worked, guessed how much time I spent pinpointing the issue ^^)
+//!
+//! So the alternative is set those default implementations in the trait, so this way the
+//! end user only have to defined the methods (and the corresponding `xxx_DEFINED`) he uses.
+
 use std::sync::Arc;
 use widestring::U16CStr;
 use windows_sys::Win32::Foundation::{STATUS_BUFFER_OVERFLOW, STATUS_REPARSE, STATUS_SUCCESS};

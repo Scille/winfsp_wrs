@@ -23,11 +23,10 @@ keywords = [
     "filesystem",
     "mountpoint",
     "windows",
-    "winfsp"
+    "winfsp",
 ]
 categories = [
-    "binding",
+    "external-ffi-bindings",
     "filesystem",
-    "mountpoint",
-    "os::windows-api"
+    "os::windows-apis",
 ]

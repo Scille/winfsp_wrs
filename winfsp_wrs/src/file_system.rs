@@ -4,12 +4,6 @@ use std::{
 };
 use widestring::{u16cstr, U16CStr, U16CString};
 use windows_sys::Win32::Foundation::STATUS_SUCCESS;
-#[cfg(feature = "icon")]
-use windows_sys::Win32::{
-    Foundation::CloseHandle,
-    Storage::FileSystem::{CreateFileW, WriteFile},
-    UI::Shell::PathMakeSystemFolderW,
-};
 use winfsp_wrs_sys::{
     FspFileSystemCreate, FspFileSystemRemoveMountPoint, FspFileSystemSetMountPoint,
     FspFileSystemSetOperationGuardStrategyF, FspFileSystemStartDispatcher,
@@ -20,9 +14,6 @@ use winfsp_wrs_sys::{
 };
 
 use crate::{FileContextKind, FileSystemInterface, TrampolineInterface};
-
-#[cfg(feature = "icon")]
-use crate::{FileAccessRights, FileAttributes, FileCreationDisposition, FileShareMode};
 
 #[repr(i32)]
 #[derive(Debug, Default, Clone, Copy)]
@@ -555,37 +546,54 @@ impl FileSystem {
 
 #[cfg(feature = "icon")]
 fn set_icon(folder_path: &U16CStr, icon_path: &Path, index: i32) {
+    use crate::{FileAccessRights, FileAttributes, FileCreationDisposition, FileShareMode};
+    use windows_sys::Win32::{
+        Foundation::CloseHandle,
+        Storage::FileSystem::{CreateFileW, WriteFile},
+        UI::Shell::PathMakeSystemFolderW,
+    };
+
+    let mut path = [
+        folder_path.as_slice(),
+        u16cstr!("\\desktop.ini").as_slice_with_nul(),
+    ]
+    .concat();
+
+    // SAFETY: Calling Win32 C++ API
     unsafe {
-        let mut path = [
-            folder_path.as_slice(),
-            u16cstr!("\\desktop.ini").as_slice_with_nul(),
-        ]
-        .concat();
-
         PathMakeSystemFolderW(folder_path.as_ptr());
+    }
 
-        let handle = CreateFileW(
+    // SAFETY: Calling Win32 C++ API
+    let handle = unsafe {
+        CreateFileW(
             path.as_mut_ptr(),
-            (FileAccessRights::file_generic_read() | FileAccessRights::file_generic_write()).0,
-            (FileShareMode::read() | FileShareMode::write()).0,
+            (FileAccessRights::FILE_GENERIC_READ | FileAccessRights::FILE_GENERIC_WRITE).0,
+            (FileShareMode::READ | FileShareMode::WRITE).0,
             std::ptr::null(),
             FileCreationDisposition::OpenAlways as _,
-            (FileAttributes::hidden() | FileAttributes::system()).0,
+            (FileAttributes::HIDDEN | FileAttributes::SYSTEM).0,
             0,
-        );
+        )
+    };
 
-        let icon = icon_path.to_str().unwrap();
+    let icon = icon_path.to_str().unwrap();
 
-        let content = format!("[.ShellClassInfo]\nIconResource={icon},{index}\n");
+    let content = format!("[.ShellClassInfo]\nIconResource={icon},{index}\n");
 
+    // SAFETY: Calling Win32 C++ API
+    unsafe {
         WriteFile(
             handle,
             content.as_ptr(),
             content.len() as u32,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
-        );
+        )
+    };
 
+    // SAFETY: Calling Win32 C++ API
+    unsafe {
         CloseHandle(handle);
     }
 }

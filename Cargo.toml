@@ -30,3 +30,7 @@ categories = [
     "filesystem",
     "os::windows-apis",
 ]
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+unwrap_used = "deny"

@@ -66,9 +66,9 @@ fn get_lplibfilename() -> Result<U16CString, InitError> {
 
 /// This function is needed to initialize `WinFSP`.
 /// You should also add `winfsp_build::build()` in your `build.rs` to allow
-/// delayload, which is needed because `winfsp_wrs` depends on `WinFSP's dll`
+/// delay load, which is needed because `winfsp_wrs` depends on `WinFSP's dll`
 /// which is not in Windows path or at the same location of your binary.
-/// # Note: This funcion is idempotent, hence calling it multiple times is safe.
+/// # Note: This function is idempotent, hence calling it multiple times is safe.
 pub fn init() -> Result<(), InitError> {
     let dll_path = get_lplibfilename()?;
     let outcome = unsafe { LoadLibraryW(dll_path.as_ptr().cast_mut()) };

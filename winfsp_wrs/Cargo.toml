@@ -1,6 +1,6 @@
 [package]
 name = "winfsp_wrs"
-version = "0.3.0"
+version = "0.4.0"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -24,7 +24,7 @@ icon = [
 ]
 
 [dependencies]
-winfsp_wrs_sys = { path = "../winfsp_wrs_sys", version = "0.3.0" }
+winfsp_wrs_sys = { path = "../winfsp_wrs_sys", version = "0.4.0" }
 chrono = "0.4.33"
 widestring = "1.1.0"
 

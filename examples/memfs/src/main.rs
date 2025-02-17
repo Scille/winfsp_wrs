@@ -878,7 +878,7 @@ fn create_memory_file_system(mountpoint: &U16CStr) -> FileSystem<MemFs> {
         ..Default::default()
     };
 
-    FileSystem::new(
+    FileSystem::start(
         params,
         Some(mountpoint),
         MemFs::new(u16str!("memfs"), false),

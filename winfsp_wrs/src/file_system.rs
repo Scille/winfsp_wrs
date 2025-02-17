@@ -346,7 +346,7 @@ impl<Ctx: FileSystemInterface> FileSystem<Ctx> {
     ///
     /// A value of `None` for `mountpoint` means that the file system should use
     /// the next available drive letter counting downwards from `Z:`.
-    pub fn new(
+    pub fn start(
         mut params: Params,
         mountpoint: Option<&U16CStr>,
         context: Ctx,

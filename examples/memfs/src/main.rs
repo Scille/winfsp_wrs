@@ -118,7 +118,7 @@ impl FileObj {
     }
 
     fn adapt_allocation_size(&mut self, file_size: usize) {
-        let units = (file_size + Self::ALLOCATION_UNIT - 1) / Self::ALLOCATION_UNIT;
+        let units = file_size.div_ceil(Self::ALLOCATION_UNIT);
         self.set_allocation_size(units * Self::ALLOCATION_UNIT)
     }
 
@@ -854,7 +854,7 @@ impl FileSystemInterface for MemFs {
     }
 }
 
-fn create_memory_file_system(mountpoint: &U16CStr) -> FileSystem<MemFs> {
+fn create_memory_file_system(mountpoint: &U16CStr) -> FileSystem {
     let mut volume_params = VolumeParams::default();
 
     volume_params

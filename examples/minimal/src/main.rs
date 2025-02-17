@@ -97,7 +97,7 @@ impl FileSystemInterface for MemFs {
     }
 }
 
-fn create_memory_file_system(mountpoint: &U16CStr) -> FileSystem<MemFs> {
+fn create_memory_file_system(mountpoint: &U16CStr) -> FileSystem {
     let mut volume_params = VolumeParams::default();
 
     volume_params

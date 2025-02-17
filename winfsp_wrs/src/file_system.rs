@@ -1,5 +1,4 @@
 use std::{
-    marker::PhantomData,
     path::Path,
     process::{Command, ExitStatus},
 };
@@ -17,7 +16,7 @@ use winfsp_wrs_sys::{
     FspFileSystemStopDispatcher, FSP_FILE_SYSTEM, FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY,
     FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_COARSE,
     FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY_FINE,
-    FSP_FSCTL_VOLUME_PARAMS, NTSTATUS,
+    FSP_FSCTL_VOLUME_PARAMS, NTSTATUS, _FSP_FILE_SYSTEM,
 };
 
 use crate::{FileContextKind, FileSystemInterface, TrampolineInterface};
@@ -316,20 +315,19 @@ pub struct Params {
     pub guard_strategy: OperationGuardStrategy,
 }
 
-#[derive(Debug, Clone)]
-pub struct FileSystem<Ctx: FileSystemInterface> {
-    // FileSystem inner value
-    inner: FSP_FILE_SYSTEM,
+pub struct FileSystem {
     pub params: Params,
-    phantom: PhantomData<Ctx>,
+    p_inner: *mut FSP_FILE_SYSTEM,
+    #[allow(clippy::type_complexity)]
+    free_p_inner_custom_fields: Option<Box<dyn FnOnce(&FileSystem)>>,
 }
 
 // SAFETY: FSP_FILE_SYSTEM contains `*mut c_void` pointers that cannot be send between threads
-// by default. However this structure is only used by WinFSP (and not exposed to the user) which
+// by default. However, this structure is only used by WinFSP (and not exposed to the user) which
 // is deep in C++ land where Rust safety rules do not apply.
-unsafe impl<Ctx: FileSystemInterface> Send for FileSystem<Ctx> {}
+unsafe impl Send for FileSystem {}
 
-impl<Ctx: FileSystemInterface> FileSystem<Ctx> {
+impl FileSystem {
     pub fn volume_params(&self) -> &VolumeParams {
         &self.params.volume_params
     }
@@ -346,21 +344,22 @@ impl<Ctx: FileSystemInterface> FileSystem<Ctx> {
     ///
     /// A value of `None` for `mountpoint` means that the file system should use
     /// the next available drive letter counting downwards from `Z:`.
-    pub fn start(
+    pub fn start<Ctx: FileSystemInterface>(
         mut params: Params,
         mountpoint: Option<&U16CStr>,
         context: Ctx,
     ) -> Result<Self, NTSTATUS> {
-        unsafe {
-            let mut p_inner = std::ptr::null_mut();
-            let interface = Box::into_raw(Box::new(TrampolineInterface::interface::<Ctx>()));
+        let mut p_inner = std::ptr::null_mut();
+        let interface = Box::into_raw(Box::new(TrampolineInterface::interface::<Ctx>()));
 
-            params
-                .volume_params
-                .set_file_context_mode(Ctx::FileContext::MODE);
+        params
+            .volume_params
+            .set_file_context_mode(Ctx::FileContext::MODE);
 
-            let device_name = params.volume_params.device_path();
-            let res = FspFileSystemCreate(
+        let device_name = params.volume_params.device_path();
+        // SAFETY: calling WinFSP C++ API
+        let res = unsafe {
+            FspFileSystemCreate(
                 // `device_name` contains const data, so this `cast_mut` is a bit scary !
                 // However, it is only a limitation in the type system (we need to cast
                 // to `PWSTR`): in practice this parameter is never modified.
@@ -368,116 +367,176 @@ impl<Ctx: FileSystemInterface> FileSystem<Ctx> {
                 &params.volume_params.0,
                 interface,
                 &mut p_inner,
-            );
+            )
+        };
 
-            if res != STATUS_SUCCESS {
-                return Err(res);
-            }
+        if res != STATUS_SUCCESS {
+            return Err(res);
+        }
 
-            (*p_inner).UserContext = Box::into_raw(Box::new(context)).cast();
+        let user_context = Box::into_raw(Box::new(context)).cast();
+        // SAFETY: Dereferencing pointer that have been initialized by `FspFileSystemCreate` call
+        unsafe {
+            (*p_inner).UserContext = user_context;
+        }
 
-            #[cfg(feature = "debug")]
-            {
-                use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE};
+        let free_p_inner_custom_fields = Box::new(|fs: &FileSystem| {
+            // SAFETY: Dereferencing pointer that have been initialized by `FspFileSystemCreate` call
+            let fs_inner: &_FSP_FILE_SYSTEM = unsafe { &*fs.p_inner };
+
+            // SAFETY: Getting back the user context that has been set created during start
+            let user_context = unsafe { Box::from_raw(fs_inner.UserContext.cast::<Ctx>()) };
+            std::mem::drop(user_context);
+
+            // SAFETY: Getting back the interface pointer that has been created during start
+            let interface = unsafe { Box::from_raw(fs_inner.Interface.cast_mut()) };
+            std::mem::drop(interface);
+        });
+
+        #[cfg(feature = "debug")]
+        {
+            use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE};
+
+            // SAFETY: calling WinFSP C++ API
+            unsafe {
                 winfsp_wrs_sys::FspDebugLogSetHandle(
                     GetStdHandle(STD_ERROR_HANDLE) as *mut std::ffi::c_void
-                );
-                winfsp_wrs_sys::FspFileSystemSetDebugLogF(p_inner, u32::MAX);
-            }
+                )
+            };
 
+            // SAFETY: calling WinFSP C++ API
+            unsafe {
+                winfsp_wrs_sys::FspFileSystemSetDebugLogF(p_inner, u32::MAX);
+            };
+        }
+
+        // SAFETY: calling WinFSP C++ API
+        unsafe {
             FspFileSystemSetOperationGuardStrategyF(
                 p_inner,
                 params.guard_strategy as FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY,
-            );
+            )
+        };
 
-            let res = FspFileSystemSetMountPoint(
+        // SAFETY: calling WinFSP C++ API
+        let res = unsafe {
+            FspFileSystemSetMountPoint(
                 p_inner,
                 mountpoint
                     .map(|x| x.as_ptr().cast_mut())
                     .unwrap_or(std::ptr::null_mut()),
-            );
+            )
+        };
 
-            if res != STATUS_SUCCESS {
-                return Err(res);
-            }
-
-            let res = FspFileSystemStartDispatcher(p_inner, 0);
-
-            if res != STATUS_SUCCESS {
-                return Err(res);
-            }
-
-            Ok(Self {
-                inner: *p_inner,
-                params,
-                phantom: Default::default(),
-            })
+        if res != STATUS_SUCCESS {
+            return Err(res);
         }
+
+        // SAFETY: calling WinFSP C++ API
+        let res = unsafe { FspFileSystemStartDispatcher(p_inner, 0) };
+
+        if res != STATUS_SUCCESS {
+            return Err(res);
+        }
+
+        Ok(Self {
+            p_inner,
+            params,
+            free_p_inner_custom_fields: Some(free_p_inner_custom_fields),
+        })
     }
 
     #[cfg(feature = "icon")]
     /// Set an icon for the mountpoint folder
     pub fn set_icon(&self, icon: &Path, index: i32) {
-        let mountpoint = unsafe { U16CStr::from_ptr_str(self.inner.MountPoint) };
+        // SAFETY: dereferencing pointer that have been initialized by `FspFileSystemCreate` call
+        let mountpoint = unsafe { U16CStr::from_ptr_str((*self.p_inner).MountPoint) };
         set_icon(mountpoint, icon, index);
     }
 
-    pub fn restart(mut self) -> Result<Self, NTSTATUS> {
-        unsafe {
-            // Need to allocate, because it will be freed
-            let mut mountpoint = U16CString::from_ptr_str(self.inner.MountPoint);
+    pub fn restart(self) -> Result<Self, NTSTATUS> {
+        // 1) First we need to copy the custom fields from the running file system before
+        // stoping it (given at this point the `FSP_FILE_SYSTEM` pointed by `self.p_inner`
+        // would have been freed).
 
-            FspFileSystemStopDispatcher(&mut self.inner);
-            FspFileSystemRemoveMountPoint(&mut self.inner);
+        // SAFETY: dereferencing pointer that have been initialized by `FspFileSystemCreate` call
+        let mut mountpoint = unsafe { U16CString::from_ptr_str((*self.p_inner).MountPoint) };
+        // SAFETY: dereferencing pointer that have been initialized by `FspFileSystemCreate` call
+        let p_user_context = unsafe { (*self.p_inner).UserContext };
 
-            let mut p_inner = std::ptr::null_mut();
+        // 2) Stop the running file system
 
-            let device_name = self.params.volume_params.device_path();
-            let res = FspFileSystemCreate(
+        // SAFETY: calling WinFSP C++ API
+        unsafe { FspFileSystemStopDispatcher(self.p_inner) };
+        // SAFETY: calling WinFSP C++ API
+        unsafe { FspFileSystemRemoveMountPoint(self.p_inner) };
+
+        // From now on, `self.p_inner` shouldn't be used since it has been freed !
+
+        // 3) Start the file system again
+
+        let mut p_inner = std::ptr::null_mut();
+
+        let device_name = self.params.volume_params.device_path();
+        // SAFETY: calling WinFSP C++ API
+        let res = unsafe {
+            FspFileSystemCreate(
                 device_name.as_ptr().cast_mut(),
                 &self.params.volume_params.0,
-                self.inner.Interface,
+                (*self.p_inner).Interface,
                 &mut p_inner,
-            );
+            )
+        };
 
-            if res != STATUS_SUCCESS {
-                return Err(res);
-            }
+        if res != STATUS_SUCCESS {
+            return Err(res);
+        }
 
-            (*p_inner).UserContext = self.inner.UserContext;
+        // SAFETY: dereferencing pointer that have been initialized by `FspFileSystemCreate` call
+        unsafe { *p_inner }.UserContext = p_user_context;
 
-            #[cfg(feature = "debug")]
-            {
-                use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE};
+        #[cfg(feature = "debug")]
+        {
+            use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE};
+
+            // SAFETY: calling WinFSP C++ API
+            unsafe {
                 winfsp_wrs_sys::FspDebugLogSetHandle(
                     GetStdHandle(STD_ERROR_HANDLE) as *mut std::ffi::c_void
-                );
-                winfsp_wrs_sys::FspFileSystemSetDebugLogF(p_inner, u32::MAX);
-            }
+                )
+            };
 
+            // SAFETY: calling WinFSP C++ API
+            unsafe { winfsp_wrs_sys::FspFileSystemSetDebugLogF(p_inner, u32::MAX) };
+        }
+
+        // SAFETY: calling WinFSP C++ API
+        unsafe {
             FspFileSystemSetOperationGuardStrategyF(
                 p_inner,
                 self.params.guard_strategy as FSP_FILE_SYSTEM_OPERATION_GUARD_STRATEGY,
-            );
+            )
+        };
 
-            let res = FspFileSystemSetMountPoint(p_inner, mountpoint.as_mut_ptr());
+        // SAFETY: calling WinFSP C++ API
+        let res = unsafe { FspFileSystemSetMountPoint(p_inner, mountpoint.as_mut_ptr()) };
 
-            if res != STATUS_SUCCESS {
-                return Err(res);
-            }
-
-            let res = FspFileSystemStartDispatcher(p_inner, 0);
-
-            if res != STATUS_SUCCESS {
-                return Err(res);
-            }
-
-            Ok(Self {
-                inner: *p_inner,
-                params: self.params,
-                phantom: PhantomData,
-            })
+        if res != STATUS_SUCCESS {
+            return Err(res);
         }
+
+        // SAFETY: calling WinFSP C++ API
+        let res = unsafe { FspFileSystemStartDispatcher(p_inner, 0) };
+
+        if res != STATUS_SUCCESS {
+            return Err(res);
+        }
+
+        Ok(Self {
+            p_inner,
+            params: self.params,
+            free_p_inner_custom_fields: self.free_p_inner_custom_fields,
+        })
     }
 
     /// Stop the mountpoint, i.e.:
@@ -485,10 +544,11 @@ impl<Ctx: FileSystemInterface> FileSystem<Ctx> {
     /// - Remove the mount point for the file system (`FspFileSystemRemoveMountPoint`).
     pub fn stop(mut self) {
         unsafe {
-            FspFileSystemStopDispatcher(&mut self.inner);
-            FspFileSystemRemoveMountPoint(&mut self.inner);
-            std::mem::drop(Box::from_raw(self.inner.UserContext.cast::<Ctx>()));
-            std::mem::drop(Box::from_raw(self.inner.Interface.cast_mut()));
+            FspFileSystemStopDispatcher(self.p_inner);
+            FspFileSystemRemoveMountPoint(self.p_inner);
+            self.free_p_inner_custom_fields
+                .take()
+                .expect("User context already freed")(&self);
         }
     }
 }

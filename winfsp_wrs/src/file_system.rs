@@ -379,10 +379,10 @@ impl<Ctx: FileSystemInterface> FileSystem<Ctx> {
             #[cfg(feature = "debug")]
             {
                 use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE};
-                crate::ext::FspDebugLogSetHandle(
+                winfsp_wrs_sys::FspDebugLogSetHandle(
                     GetStdHandle(STD_ERROR_HANDLE) as *mut std::ffi::c_void
                 );
-                crate::ext::FspFileSystemSetDebugLogF(p_inner, u32::MAX);
+                winfsp_wrs_sys::FspFileSystemSetDebugLogF(p_inner, u32::MAX);
             }
 
             FspFileSystemSetOperationGuardStrategyF(
@@ -449,10 +449,10 @@ impl<Ctx: FileSystemInterface> FileSystem<Ctx> {
             #[cfg(feature = "debug")]
             {
                 use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE};
-                crate::ext::FspDebugLogSetHandle(
+                winfsp_wrs_sys::FspDebugLogSetHandle(
                     GetStdHandle(STD_ERROR_HANDLE) as *mut std::ffi::c_void
                 );
-                crate::ext::FspFileSystemSetDebugLogF(p_inner, u32::MAX);
+                winfsp_wrs_sys::FspFileSystemSetDebugLogF(p_inner, u32::MAX);
             }
 
             FspFileSystemSetOperationGuardStrategyF(

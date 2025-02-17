@@ -26,7 +26,7 @@ icon = [
 [dependencies]
 winfsp_wrs_sys = { path = "../winfsp_wrs_sys", version = "0.3.0" }
 chrono = "0.4.33"
-widestring = "1.0.2"
+widestring = "1.1.0"
 
 [dependencies.windows-sys]
 version = "0.52.0"

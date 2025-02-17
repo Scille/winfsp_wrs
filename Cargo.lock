@@ -413,7 +413,7 @@ checksum = "dff9641d1cd4be8d1a070daf9e3773c5f67e78b4d9d42263020c057706765c04"
 
 [[package]]
 name = "winfsp_wrs"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "widestring",
@@ -423,11 +423,11 @@ dependencies = [
 
 [[package]]
 name = "winfsp_wrs_build"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "winfsp_wrs_sys"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "registry",
 ]

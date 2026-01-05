@@ -234,6 +234,7 @@ impl DirInfo {
         info
     }
 
+    #[cfg(windows)]
     pub fn from_osstr(file_info: FileInfo, file_name: &std::ffi::OsStr) -> Self {
         use std::os::windows::ffi::OsStrExt;
 
